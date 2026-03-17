@@ -1,3 +1,4 @@
+### Setting model ###
 library(mgcv)
 
 N <- nrow(df)

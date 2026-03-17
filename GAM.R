@@ -1,5 +1,11 @@
 ### Setting model ###
 library(mgcv)
+df <- read_excel("Rao_diversity1.xlsx", sheet = "RaoQ")
+df$Altitude_scaled <- as.numeric(scale(df$Elevation, center = TRUE, scale = TRUE))
+df$Locality <- as.factor(df$Locality)
+df$Year <- as.factor(df$Year)
+df$Exposition2 <- as.numeric(df$Exposition2)
+df$Exposition2 <- scale(df$Exposition2)
 
 N <- nrow(df)
 df$Wings_cwm_scaled        <- (df$Wings_cwm * (N - 1) + 0.5) / N
@@ -12,7 +18,7 @@ df$Locality <- factor(df$Locality)
 
 mod_gam1 <- gam(
   Body_size_cwm ~ s(Locality, bs = "re") +
-    s(Altitude_scaled, bs = "cr") + Exposition2 +
+    s(Altitude_scaled, bs = "cr",k=5) + Exposition2 +
     s(Year, bs = "re"),
   data   = df,
   family = gaussian(link="log"),
@@ -20,12 +26,23 @@ mod_gam1 <- gam(
 )
 mod_gam2 <- gam(
   Trophic_cwm ~ s(Locality, bs = "re") +
-    s(Altitude_scaled, bs = "cr") + Exposition2 +
+    s(Altitude_scaled, bs = "cr",k=5) + Exposition2 +
     s(Year, bs = "re"),
   data   = df,
   family = betar(link="cloglog"),
   method = "REML"
 )
+
+mod_gam_rao <- gam(
+  Q ~ 
+    s(Locality, bs = "re") + 
+    s(Altitude_scaled, bs = "cr", k = 5)  + Exposition2 +
+    s(Year, bs = "re"),
+  data   = df,
+  family = tw(link="log"), select = TRUE,
+  method = "REML"
+)
+
 summary(mod_gam1)
 par(mfrow = c(2, 2))
 gam.check(mod_gam1)

@@ -36,13 +36,19 @@ my_ses_mpd <- ses.mpd(comm_matched, phydist, null.model="independentswap", abund
 write_xlsx(my_ses_mpd, "Carabid_MPD.xlsx")
 
 # Analysis of Phylogeny Sespd and meanPD #
-PD <- read_excel("PD.xlsx", sheet = "List1")
+PD <- read_excel("Beskydy_2007_2008_traits_final.xlsx", sheet = "chilo_diplo_iso_FD")
 PD$Locality <- as.factor(PD$Locality)
 PD$Year     <- as.factor(PD$Year)
+PD$Altitude_scaled <- as.numeric(scale(PD$Altitude, center = TRUE, scale = TRUE))
+PD <- PD %>%
+  mutate(
+    Exposition2 = sapply(strsplit(as.character(Exposition), "_"), function(x) mean(as.numeric(x))),
+    Exposition2 = as.numeric(scale(Exposition2))
+  )
+
 mod_gam_pd <- gam(
-  meanPD ~ s(Altitude_scaled, bs = "cr", k = 5) + s(Locality, bs = "re") +
-    Exposition2 +
-    s(Year, bs = "re"),
+  MPD ~ s(Locality, bs = "re") +
+    Altitude_scaled + Exposition2 + Site.protection + Year,
   data = PD, 
   family = gaussian(), 
   method = "REML"
@@ -87,21 +93,20 @@ PD %>%
 
 ### Graphical vizualization of SES.pd ###
 mod_gam_sespd <- gam(
-  SESpd ~ s(Altitude_scaled, bs = "cr", k = 5) + s(Locality, bs = "re") +
-    Exposition2 +
-    s(Year, bs = "re"),
-  data = df, 
+  SESpd ~ s(Locality, bs = "re") +
+    s(Altitude_scaled, bs = "cr",k=3) + Exposition2 + Site.protection + Year,
+  data = PD, 
   family = gaussian(), 
   method = "REML"
 )
 
-
 library(ggplot2)
 newdat <- data.frame(
-  Altitude_scaled = seq(min(df$Altitude_scaled), max(df$Altitude_scaled), length = 200),
-  Exposition2 = mean(df$Exposition2),
-  Locality = NA,
-  Year = NA
+  Altitude_scaled = seq(min(PD$Altitude_scaled, na.rm = TRUE), max(PD$Altitude_scaled, na.rm = TRUE), length = 200),
+  Exposition2 = mean(PD$Exposition2, na.rm = TRUE),
+  Locality = PD$Locality[1], 
+  Year = PD$Year[1],
+  Site.protection = PD$Site.protection[1] 
 )
 pred <- predict(mod_gam_sespd, newdata = newdat, se.fit = TRUE,
                 exclude = c("s(Locality)", "s(Year)"))
@@ -110,13 +115,12 @@ newdat$se  <- pred$se.fit
 newdat$upper <- newdat$fit + 1.96 * newdat$se
 newdat$lower <- newdat$fit - 1.96 * newdat$se
 
-phylo<-ggplot(df, aes(x = Altitude_scaled, y = SESpd)) +
-  
+phylo<-ggplot(PD, aes(x = Altitude_scaled, y = SESpd)) +
   # The raw points - now matching the CWM plot using geom_jitter
   geom_jitter(width = 0.03, height = 0, size = 1.8, alpha = 0.6, color = "black") +  
   
   # The GAM trendline
-  geom_smooth(method = "gam", color = "black", fill = "grey70", alpha = 0.3) +
+  geom_smooth(method = "glm", color = "black", fill = "grey70", alpha = 0.3) +
   
   # The 0 baseline 
   geom_hline(yintercept = 0, linetype = "solid", color = "black", linewidth = 0.5, alpha = 0.6) + 
@@ -145,3 +149,61 @@ phylo<-ggplot(df, aes(x = Altitude_scaled, y = SESpd)) +
     plot.margin      = margin(6, 8, 6, 6)
   )
 phylo
+
+
+# Graph for MPD #
+newdat_mpd <- data.frame(
+  Altitude_scaled = seq(min(PD$Altitude_scaled, na.rm = TRUE), max(PD$Altitude_scaled, na.rm = TRUE), length = 200),
+  Exposition2 = mean(PD$Exposition2, na.rm = TRUE),
+  Locality = PD$Locality[1], 
+  Year = PD$Year[1],
+  Site.protection = PD$Site.protection[1] 
+)
+
+# 2. Predict using the MPD model (mod_gam_pd)
+pred_mpd <- predict(mod_gam_pd, 
+                    newdata = newdat_mpd, 
+                    se.fit = TRUE,
+                    exclude = "s(Locality)")
+
+# 3. Calculate the confidence intervals
+newdat_mpd$fit <- pred_mpd$fit
+newdat_mpd$se  <- pred_mpd$se.fit
+newdat_mpd$upper <- newdat_mpd$fit + 1.96 * newdat_mpd$se
+newdat_mpd$lower <- newdat_mpd$fit - 1.96 * newdat_mpd$se
+
+phylo_mpd <- ggplot(PD, aes(x = Altitude_scaled, y = MPD)) + # Make sure y is MPD here!
+  
+  # The raw points
+  geom_jitter(width = 0.03, height = 0, size = 1.8, alpha = 0.6, color = "black") +  
+  
+  # Draw the confidence interval using newdat_mpd
+  geom_ribbon(data = newdat_mpd, aes(y = fit, ymin = lower, ymax = upper), fill = "grey70", alpha = 0.3) +
+  
+  # Draw the linear GAM trendline using newdat_mpd
+  geom_line(data = newdat_mpd, aes(y = fit), color = "black", linewidth = 1) +
+  
+  # (Notice I removed the 0 and 1.96 horizontal lines, as they don't apply to raw MPD!)
+  
+  # X-Axis limits
+  scale_x_continuous(breaks = seq(-2, 2, 1), minor_breaks = NULL) +
+  
+  theme_minimal() +
+  labs(
+    x = "Elevational gradient (Scaled)",
+    y = "Mean pairwise distance (MPD)"
+  ) +
+  theme(
+    panel.background = element_blank(),
+    plot.background  = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line        = element_line(colour = "black", linewidth = 0.6),
+    axis.ticks       = element_line(colour = "black", linewidth = 0.5),
+    axis.ticks.length= unit(4, "pt"),
+    axis.title       = element_text(size = 15),
+    axis.text        = element_text(colour = "black", size = 11),
+    plot.margin      = margin(6, 8, 6, 6)
+  )
+
+phylo_mpd

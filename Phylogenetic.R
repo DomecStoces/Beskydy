@@ -21,6 +21,11 @@ null.model<-ses.pd(commun,tree.pp, null.model="independentswap", runs=500)
 my<-cophenetic(tree.pp)
 tree.mpd<-mpd(commun,my,abundance.weighted=TRUE)
 
+
+
+commun <- read_excel("Beskydy_2007_2008_traits_final.xlsx", sheet = "carabids_compo_names")
+tree_data <- read_excel("Beskydy_2007_2008_traits_final.xlsx", sheet = "Phylo_carabids")
+
 # Analysis of Phylogeny Sespd and meanPD #
 PD <- read_excel("PD.xlsx", sheet = "List1")
 PD$Locality <- as.factor(PD$Locality)

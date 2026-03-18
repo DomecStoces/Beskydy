@@ -3,7 +3,7 @@ library(readxl)
 library(mgcv)
 library(stringr)
 library(dplyr)
-df <- read_excel("Beskydy_2007_2008_traits_final.xlsx", sheet = "spiders_FD")
+df <- read_excel("Beskydy_2007_2008_traits_final.xlsx", sheet = "chilo_diplo_iso_FD")
 df$Altitude_scaled <- as.numeric(scale(df$Altitude, center = TRUE, scale = TRUE))
 df$Locality <- as.factor(df$Locality)
 df$Trees <- as.factor(df$Trees)
@@ -21,6 +21,24 @@ df$Trophic_01 <- df$Trophic - 1
 df$Trophic_scaled <- (df$Trophic_01 * (n - 1) + 0.5) / n
 df$Dispersal_scaled <- (df$Dispersal * (n - 1) + 0.5) / n
 
+# Scaling traits for carabids #
+min_val <- min(df$Trophic, na.rm = TRUE)
+max_val <- max(df$Trophic, na.rm = TRUE)
+
+df$Trophic_norm <- (df$Trophic - min_val) / (max_val - min_val)
+n <- nrow(df)
+df$Trophic_scaled <- (df$Trophic_norm * (n - 1) + 0.5) / n
+df$Dispersal_scaled <- (df$Dispersal * (n - 1) + 0.5) / n
+
+# Scaling traits for weevils #
+n <- nrow(df)
+df$Dispersal_01 <- df$Dispersal - 1
+df$Dispersal_scaled <- (df$Dispersal_01 * (n - 1) + 0.5) / n
+
+# Scaling traits for chilo-diplo-iso #
+n <- nrow(df)
+df$Trophic_01 <- df$Trophic - 1
+df$Trophic_scaled <- (df$Trophic_01 * (n - 1) + 0.5) / n
 
 mod_gam1 <- gam(
   Size ~ s(Locality, bs = "re") +
@@ -99,7 +117,7 @@ p <- ggplot() +
   geom_jitter(data = df,
               aes(x = Altitude_scaled, y = Size),
               width = 0.03, height = 0, size = 1.8, alpha = 0.6) +
-  labs(title = "Spiders", x = "Elevational gradient (scaled)", y = "Size CWM") +
+  labs(title = "Weevils", x = "Elevational gradient (scaled)", y = "Dispersal ability CWM") +
   scale_x_continuous(breaks = seq(-2, 2, 1), minor_breaks = NULL) +
   
   # Y-Axis strictly 0 to 1
@@ -143,9 +161,9 @@ fv <- fitted_values(mod_gam2, data = new_data, exclude = excl,
   mutate(
     lower_link = fitted_link - (1.96 * se_link),
     upper_link = fitted_link + (1.96 * se_link),
-    fitted = exp(fitted_link),  # CHANGED: exp() for log-link
-    lower  = exp(lower_link),   # CHANGED: exp() for log-link
-    upper  = exp(upper_link)    # CHANGED: exp() for log-link
+    fitted = exp(fitted_link),  
+    lower  = exp(lower_link),   
+    upper  = exp(upper_link)    
   )
 
 # 4. Plot
@@ -165,7 +183,7 @@ p <- ggplot() +
               width = 0.03, height = 0, size = 1.8, alpha = 0.6) +
   
   # Labels
-  labs(title = "Spiders", x = "Elevational gradient (scaled)", y = "Size CWM") +
+  labs(title = "Weevils", x = "Elevational gradient (scaled)", y = "Size CWM") +
   scale_x_continuous(breaks = seq(-2, 2, 1), minor_breaks = NULL) +
   
   # Y-Axis: CHANGED to let ggplot auto-scale to your 3-8.5 size range

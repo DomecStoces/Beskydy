@@ -21,7 +21,7 @@ null.model<-ses.pd(commun,tree.pp, null.model="independentswap", runs=500)
 my<-cophenetic(tree.pp)
 tree.mpd<-mpd(commun,my,abundance.weighted=TRUE)
 
-### Analysis of Phylogeny Sespd and meanPD ###
+# Analysis of Phylogeny Sespd and meanPD #
 PD <- read_excel("PD.xlsx", sheet = "List1")
 PD$Locality <- as.factor(PD$Locality)
 PD$Year     <- as.factor(PD$Year)

@@ -4,27 +4,36 @@ library(sp)
 library(spdep)
 library(mgcv)
 library(readxl)
+library(writexl)
 library(picante)
+library(ape)
+# Calculation of PD, MPD, and SESpd #
+commun <- read_excel("Beskydy_2007_2008_traits_final.xlsx", sheet = "chilo_diplo_iso_compo_names")
+tree_data <- read_excel("Beskydy_2007_2008_traits_final.xlsx", sheet = "Phylo_chilo")
+tree_data[] <- lapply(tree_data, factor)
+commun_df <- as.data.frame(commun)
 
-commun<-read.table("clipboard",header=T)
-tree<-read.table("clipboard",header=T)
-tree[, 1:6] <- lapply(tree[, 1:6], as.factor)
+# Create the tree using the EXACT column names from your Excel sheet
+tree.p <- as.phylo(~Order/Family/Family_name/Species, data=tree_data)
+treeRoot <- multi2di(tree.p)
+tree.pp <- compute.brlen(treeRoot)
 
-tree <- lapply(tree, factor)
-tree.p<-as.phylo(~Family/Subfamily/Species,data=tree)
-treeRoot<-multi2di(tree.p)
-tree.pp<-compute.brlen(treeRoot)
-tree.pp
+# Use picante's built-in tool to prune the tree and community matrix 
+combined <- match.phylo.comm(tree.pp, commun_df)
+tree_matched <- combined$phy
+comm_matched <- combined$comm
 
-null.model<-ses.pd(commun,tree.pp, null.model="independentswap", runs=500)
+# Calculate ses.pd (Standardized Effect Size of Faith's PD)
+my_ses_pd <- ses.pd(comm_matched, tree_matched, null.model="independentswap", runs=500)
+# pd.obs.z
+write_xlsx(my_ses_pd, "Carabid_SESpd.xlsx")
 
-my<-cophenetic(tree.pp)
-tree.mpd<-mpd(commun,my,abundance.weighted=TRUE)
-
-
-
-commun <- read_excel("Beskydy_2007_2008_traits_final.xlsx", sheet = "carabids_compo_names")
-tree_data <- read_excel("Beskydy_2007_2008_traits_final.xlsx", sheet = "Phylo_carabids")
+# Calculate Mean Pairwise Distance (MPD) and ses.mpd #
+phydist <- cophenetic(tree_matched)
+my_raw_mpd <- mpd(comm_matched, phydist, abundance.weighted=TRUE)
+my_ses_mpd <- ses.mpd(comm_matched, phydist, null.model="independentswap", abundance.weighted=TRUE, runs=500)
+# MPD = mpd.obs
+write_xlsx(my_ses_mpd, "Carabid_MPD.xlsx")
 
 # Analysis of Phylogeny Sespd and meanPD #
 PD <- read_excel("PD.xlsx", sheet = "List1")

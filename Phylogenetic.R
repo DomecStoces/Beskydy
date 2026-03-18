@@ -6,6 +6,21 @@ library(mgcv)
 library(readxl)
 library(picante)
 
+commun<-read.table("clipboard",header=T)
+tree<-read.table("clipboard",header=T)
+tree[, 1:6] <- lapply(tree[, 1:6], as.factor)
+
+tree <- lapply(tree, factor)
+tree.p<-as.phylo(~Family/Subfamily/Species,data=tree)
+treeRoot<-multi2di(tree.p)
+tree.pp<-compute.brlen(treeRoot)
+tree.pp
+
+null.model<-ses.pd(commun,tree.pp, null.model="independentswap", runs=500)
+
+my<-cophenetic(tree.pp)
+tree.mpd<-mpd(commun,my,abundance.weighted=TRUE)
+
 ### Analysis of Phylogeny Sespd and meanPD ###
 PD <- read_excel("PD.xlsx", sheet = "List1")
 PD$Locality <- as.factor(PD$Locality)

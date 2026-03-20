@@ -1,5 +1,5 @@
 # 1. Load WEEVIL Data
-df_weevils <- read_excel("Beskydy_2007_2008_traits_final.xlsx", sheet = "carabids_FD")
+df_weevils <- read_excel("Beskydy_2007_2008_traits_final.xlsx", sheet = "spiders_FD")
 compo_names_weevils <- read_excel("Beskydy_2007_2008_traits_final.xlsx", sheet = "carabids_compo_names")
 
 # 2. Match metadata

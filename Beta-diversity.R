@@ -12,8 +12,8 @@ library(ggplot2)
 library(readxl)
 
 # 1.
-df <- read_excel("Beskydy_2007_2008_traits_final.xlsx", sheet = "spiders_FD")
-compo_names <- read_excel("Beskydy_2007_2008_traits_final.xlsx", sheet = "spiders_compo_names")
+df <- read_excel("Beskydy_2007_2008_traits_final.xlsx", sheet = "chilo_diplo_iso_FD")
+compo_names <- read_excel("Beskydy_2007_2008_traits_final.xlsx", sheet = "chilo_diplo_iso_compo_names")
 
 # 2. Initial
 metadata <- df
@@ -29,6 +29,7 @@ rownames(comm_matrix) <- compo_names$ID
 df_combined <- bind_cols(metadata_matched, as.data.frame(comm_matrix))
 
 df_agg <- df_combined %>%
+  drop_na(Trees, Altitude) %>%
   group_by(Locality, Trees, Altitude) %>%
   summarise(across(all_of(colnames(comm_matrix)), sum), .groups = "drop") %>%
   mutate(
@@ -98,3 +99,4 @@ plot_richness <- ggplot(df_agg, aes(x = Altitude_scaled, y = Richness)) +
        x = "Elevational gradient (scaled)",
        y = "Species richness")
 print(plot_richness)
+

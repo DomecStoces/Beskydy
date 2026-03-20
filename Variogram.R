@@ -1,6 +1,7 @@
 library(sf)
 library(dplyr)
 library(tidyr)
+library(writexl)
 
 # Updated coordinates for 38 localities
 coords <- data.frame(
@@ -103,14 +104,15 @@ coords_clean <- coords_utm %>%
   dplyr::select(Locality, X, Y)
 
 # Join with community weighted means data (ensure cwm_clean is loaded in your environment)
-cwm_clean <- cwm_clean %>% left_join(coords_clean, by = "Locality")
+df <- df %>% left_join(coords_clean, by = "Locality")
 
 # Build the final data frame for your models/variograms
-df <- cwm_clean %>%
+df <- df %>%
   transmute(
     Year        = factor(Year),
     Locality    = factor(Locality),
     Month       = factor(Month),
+    Site.protection = factor(Site.protection), 
     Exposition2 = as.numeric(scale(as.numeric(Exposition2))),
     
     Altitude_scaled,
@@ -118,33 +120,38 @@ df <- cwm_clean %>%
     X_km = (X - mean(X, na.rm = TRUE)) / 1000,
     Y_km = (Y - mean(Y, na.rm = TRUE)) / 1000,
     
-    Moisture_cwm, Wings_cwm, Distribution_cwm, Body_size_cwm,
-    Bioindication_cwm, Dietary_cwm
+    Size, Trophic, Rao
   ) %>%
   tidyr::drop_na()
 
 # Calculate adaptive basis dimension (k)
 k_xy <- max(6, min(10, nrow(dplyr::distinct(df, X_km, Y_km)) - 1))
 
-df <- read_excel("df.xlsx", sheet = "Sheet1")
-
+write_xlsx(df, "df1.xlsx")
 # Correlogram (autocorrelation using Moran’s I based on site-averaged Pearson residuals)
 library(gstat)
 library(sp)
 library(spdep)
 
-df$resid <- residuals(mod_gam1, type = "pearson")
-df_site_res <- df %>%
-  group_by(Locality, X_km, Y_km) %>%
-  summarise(mean_res = mean(resid, na.rm = TRUE), .groups = "drop")
-coords <- as.matrix(df_site_res[,c("X_km","Y_km")])
-nb <- dnearneigh(coords, 0, 10)   
-lw <- nb2listw(nb, style = "W")
-moran.test(df_site_res$mean_res, lw)
-coordinates(df_site_res) <- ~X_km + Y_km
-vg <- variogram(mean_res ~ 1,
-                data = df_site_res,
-                cutoff = 40,
-                width = 2,
-                cressie = TRUE)
-plot(vg, main = "Empirical variogram of GAM residuals")
+# Find the distance to the nearest neighbor for every point
+k1 <- knn2nb(knearneigh(coords, k = 1))
+dists <- unlist(nbdists(k1, coords))
+max_1nn_dist <- max(dists)
+print(max_1nn_dist)
+
+# Calculate the robust Cressie variogram up to 10 km
+vgm_cressie <- variogram(
+  mean_res ~ 1, 
+  locations = ~ X_km + Y_km, 
+  data = df_site_res,
+  cutoff = 10,       
+  width = 1,         
+  cressie = TRUE     
+)
+
+# Plot it
+plot(vgm_cressie, 
+     main = "Semi-variogram of residuals (Cressie)", 
+     xlab = "Distance (km)", 
+     ylab = "Semi-variance",
+     pch = 19, cex = 1.2)

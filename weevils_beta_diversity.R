@@ -39,14 +39,14 @@ dist_simpson_sqrt  <- sqrt(dist_simpson)
 dist_richness_sqrt <- sqrt(dist_richness)
 
 # 7. PERMANOVA for Weevils
-perm_jaccard_weevils <- adonis2(dist_jaccard_sqrt ~ Trees + Altitude_scaled, 
+perm_jaccard <- adonis2(dist_jaccard_sqrt ~ Trees + Altitude_scaled, 
                                 data = df_agg_weevils, permutations = 999, by = "margin")
 
-perm_simpson_weevils <- adonis2(dist_simpson_sqrt ~ Trees + Altitude_scaled, 
+perm_simpson <- adonis2(dist_simpson_sqrt ~ Trees + Altitude_scaled, 
                                 data = df_agg_weevils, permutations = 999, by = "margin")
 
-perm_richness_weevils <- adonis2(dist_richness_sqrt ~ Trees + Altitude_scaled, 
+perm_richness<- adonis2(dist_richness_sqrt ~ Trees + Altitude_scaled, 
                                  data = df_agg_weevils, permutations = 999, by = "margin")
-print(perm_jaccard_weevils)
-print(perm_simpson_weevils)
-print(perm_richness_weevils)
+print(perm_jaccard)
+print(perm_simpson)
+print(perm_richness)

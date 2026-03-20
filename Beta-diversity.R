@@ -7,45 +7,76 @@ write_xlsx(df[, c("ID", "species_richness")], "species_richness.xlsx")
 
 library(vegan)
 library(dplyr)
+library(tidyr)
 library(ggplot2)
 
+df <- read_excel("Beskydy_2007_2008_traits_final.xlsx", sheet = "spiders_FD")
+df$Altitude_scaled <- as.numeric(scale(df$Altitude, center = TRUE, scale = TRUE))
+df$Locality <- as.factor(df$Locality)
+df$Trees <- as.factor(df$Trees)
+df$Year <- as.factor(df$Year)
+compo_names <- read_excel("Beskydy_2007_2008_traits_final.xlsx", sheet = "spiders_compo_names")
 
+# 2. Prepare Community Matrix
+comm_matrix <- as.matrix(compo_names[, -1])
+rownames(comm_matrix) <- compo_names$ID
 
-# 1. Převod na presence/absence
+# Convert to presence/absence (1/0)
 comm_pa <- ifelse(comm_matrix > 0, 1, 0)
 
-# 2. Výpočet NEZÁVISLÝCH indexů pomocí designdist()
-# A. Jaccard (Náhrada / Celková disimilarita)
-# Vzorec disimilarity: 1 - (J / (A + B - J))
+# 3. Calculate Independent Beta-Diversity Components
 dist_jaccard <- designdist(comm_pa, method = "1 - (J / (A + B - J))", terms = "binary")
-
-# B. Simpson (Podle textu pro 'Nestness' / překryv)
-# Vzorec disimilarity: 1 - (J / min(A, B))
 dist_simpson <- designdist(comm_pa, method = "1 - (J / pmin(A, B))", terms = "binary")
+dist_richness <- designdist(comm_pa, method = "1 - (pmin(A, B) / pmax(A, B))", terms = "binary")
 
-# C. Uniformita species richness (Index R)
-# Text definuje R = min(Sx, Sy) / max(Sx, Sy). 
-# Pro disimilaritu (vzdálenost pro PERMDISP) použijeme 1 - R:
-dist_richness_ratio <- designdist(comm_pa, method = "1 - (pmin(A, B) / pmax(A, B))", terms = "binary")
+# Square-root transform them
+dist_jaccard_sqrt  <- sqrt(dist_jaccard)
+dist_simpson_sqrt  <- sqrt(dist_simpson)
+dist_richness_sqrt <- sqrt(dist_richness)
 
-# 3. Transformace pro PERMDISP (aby nevznikaly negativní vlastní čísla v PCoA)
-dist_jaccard_sqrt <- sqrt(dist_jaccard)
-dist_simpson_sqrt <- sqrt(dist_simpson)
-dist_richness_sqrt <- sqrt(dist_richness_ratio)
+# 4. Prepare Metadata
+# Notice: You overwrote your nice Date/Month cleaning in your script! 
+# Let's keep it simple and just use 'df' directly since rows match 'compo_names'
+metadata_matched <- df
+metadata_matched$ID <- 1:nrow(metadata_matched)
 
-# 4. PERMDISP (Tady už pokračuješ standardně jako předtím)
-disp_jaccard <- betadisper(dist_jaccard_sqrt, metadata$Treatment)
-disp_simpson <- betadisper(dist_simpson_sqrt, metadata$Treatment)
-disp_richness <- betadisper(dist_richness_sqrt, metadata$Treatment)
+# Filter the metadata to match exactly with species data
+# (Fixed the typo here: used compo_names$ID instead of spiders_compo_names$ID)
+metadata_matched <- metadata_matched[metadata_matched$ID %in% compo_names$ID, ]
 
-# Globální testy
-perm_turnover <- permutest(disp_turnover, permutations = 999)
-perm_nested   <- permutest(disp_nested, permutations = 999)
-perm_total    <- permutest(disp_total, permutations = 999)
+# Scale the Altitude variable and convert categorical variables to factors
+metadata_matched$Altitude_scaled <- scale(metadata_matched$Altitude)
+metadata_matched$Locality <- as.factor(metadata_matched$Locality)
+metadata_matched$Trees <- as.factor(metadata_matched$Trees)
 
-print(perm_turnover)
-print(perm_nested)
-print(perm_total)
+# 5. TESTING BETA-DIVERSITY
+
+# A. Testing CATEGORICAL variables (Dispersion / Variance)
+disp_jaccard <- betadisper(dist_jaccard_sqrt, metadata_matched$Trees)
+disp_simpson <- betadisper(dist_simpson_sqrt, metadata_matched$Trees)
+print("--- PERMDISP Results ---")
+print(permutest(disp_jaccard, permutations = 999))
+print(permutest(disp_simpson, permutations = 999))
+
+# B. Testing CONTINUOUS variables (Compositional Shift) -> adonis2 (PERMANOVA)
+# This asks: Does the species composition shift along the altitude gradient?
+perm_control <- how(plots = Plots(strata = metadata_matched$Locality, type = "free"),
+                    within = Within(type = "none"),
+                    nperm = 999)
+perm_jaccard <- adonis2(dist_jaccard_sqrt ~ Trees + Altitude_scaled, 
+                        data = metadata_matched, 
+                        permutations = perm_control)
+perm_simpson <- adonis2(dist_simpson_sqrt ~ Trees + Altitude_scaled, 
+                        data = metadata_matched, 
+                        permutations = perm_control)
+perm_richness <- adonis2(dist_richness_sqrt ~ Trees + Altitude_scaled, 
+                         data = metadata_matched, 
+                         permutations = perm_control)
+
+print("--- PERMANOVA of Elevational gradient shuffling whole Locality ---")
+print(perm_jaccard)
+print(perm_simpson)
+print(perm_richness)
 
 # Post-hoc testy
 TukeyHSD(disp_turnover)

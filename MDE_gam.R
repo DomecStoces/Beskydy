@@ -172,7 +172,11 @@ model_richness <- gam(
 )
 # Check the new summary
 summary(model_richness)
-
+par(mfrow = c(2, 2))
+gam.check(model_richness)
+concurvity(model_richness, full = TRUE)
+gratia::draw(model_richness)
+plot(model_richness, select = 2)
 # 3. Predict and Plot
 target_groups <- c("Predator", "Saproxylic")
 

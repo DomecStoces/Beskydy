@@ -91,3 +91,20 @@ if (any(duplicated(master_df$SampleID))) {
 }
 write_xlsx(master_df, "Beskydy_Master_Merged.xlsx")
 
+# Doing long format for functional groups #
+library(tidyverse)
+df <- read_excel("Beskydy_Master_Merged.xlsx", sheet = "all")
+Beskydy_Long <- df %>%
+  pivot_longer(
+    # Select all columns EXCEPT the first 8 metadata columns to be pivoted
+    cols = -c(Locality, Year, Time.period, Temperature, Precipitation, Site.protection, Altitude, Trees),
+    
+    # Name the new column that will hold the column headers (the species names)
+    names_to = "Species_Name",
+    
+    # Name the new column that will hold the numbers (the counts/abundances)
+    values_to = "Count"
+  )
+Beskydy_Long <- Beskydy_Long %>%
+  filter(Count > 0)
+write_xlsx(Beskydy_Long, "Beskydy_long.xlsx")

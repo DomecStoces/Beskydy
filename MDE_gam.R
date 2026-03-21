@@ -11,11 +11,7 @@ df$Trees <- as.factor(df$Trees)
 df$Year <- as.factor(df$Year)
 df$Functional.group <- as.factor(df$Functional.group)
 
-model2 <- gam(
-  Count ~ Functional.group +
-    s(Altitude_scaled, k = 12) +  
-    s(Altitude_scaled, by = Functional.group, k = 12) +  
-    s(Locality, bs = "re") +
+model2 <- gam(Count ~ Functional.group + s(Altitude_scaled, by = Functional.group, k = 12) + s(Locality, bs = "re") + 
     Year,
   data = df,
   family = nb(link = "log"),
@@ -63,7 +59,7 @@ obs_newdata$Obs_UCI <- exp(obs_pred$fit + (1.96 * obs_pred$se.fit))
 # ---------------------------------------------------------
 # STEP 2: Simulate the NULL MODEL (Randomization)
 # ---------------------------------------------------------
-n_sims <- 100 # Change to 999 for final publication!
+n_sims <- 999
 null_preds_list <- list()
 
 # Filter data just to the three target groups
@@ -151,3 +147,15 @@ ggplot(plot_data, aes(x = Altitude_scaled)) +
   theme(legend.position = "right",
         strip.text = element_text(face = "bold", size = 14),
         panel.grid.minor = element_blank())
+
+# Species richness GAM (without random effects for simplicity) # 
+model_rich <- gam(
+  Richness ~ Functional.group +
+    s(Altitude_scaled, k = 12) +
+    s(Altitude_scaled, by = Functional.group, k = 12) +
+    s(Locality, bs = "re") +
+    Year,
+  data = df,
+  family = nb(link = "log"),
+  method = "REML"
+)

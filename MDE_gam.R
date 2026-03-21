@@ -148,14 +148,139 @@ ggplot(plot_data, aes(x = Altitude_scaled)) +
         strip.text = element_text(face = "bold", size = 14),
         panel.grid.minor = element_blank())
 
-# Species richness GAM (without random effects for simplicity) # 
-model_rich <- gam(
-  Richness ~ Functional.group +
-    s(Altitude_scaled, k = 12) +
-    s(Altitude_scaled, by = Functional.group, k = 12) +
-    s(Locality, bs = "re") +
+# Species richness #
+Richness_df <- df %>%
+  filter(Count > 0) %>% 
+  group_by(Locality, Year, Altitude_scaled, Functional.group) %>%
+  summarize(Richness = n_distinct(Species_Name), .groups = "drop") %>%
+  complete(
+    nesting(Locality, Year, Altitude_scaled), 
+    Functional.group,                         
+    fill = list(Richness = 0)                 
+  )
+Richness_df$Locality <- as.factor(Richness_df$Locality)
+Richness_df$Year <- as.factor(Richness_df$Year)
+Richness_df$Functional.group <- as.factor(Richness_df$Functional.group)
+model_richness <- gam(
+  Richness ~ Functional.group + 
+    s(Altitude_scaled, by = Functional.group, k = 12) +  
+    s(Locality, bs = "re") + 
     Year,
-  data = df,
+  data = Richness_df,
   family = nb(link = "log"),
   method = "REML"
 )
+# Check the new summary
+summary(model_richness)
+
+# 3. Predict and Plot
+target_groups <- c("Predator", "Saproxylic")
+
+alt_grid <- seq(min(Richness_df$Altitude_scaled, na.rm = TRUE),
+                max(Richness_df$Altitude_scaled, na.rm = TRUE),
+                length.out = 100)
+
+obs_newdata <- expand.grid(
+  Altitude_scaled = alt_grid,
+  Functional.group = target_groups,
+  Locality = Richness_df$Locality[1],
+  Year = Richness_df$Year[1]
+)
+
+obs_pred <- predict(model_richness,
+                    newdata = obs_newdata,
+                    type = "link",
+                    se.fit = TRUE,
+                    exclude = "s(Locality)")
+
+obs_newdata$Obs_Fit <- exp(obs_pred$fit)
+obs_newdata$Obs_LCI <- exp(obs_pred$fit - 1.96 * obs_pred$se.fit)
+obs_newdata$Obs_UCI <- exp(obs_pred$fit + 1.96 * obs_pred$se.fit)
+
+n_sims <- 999
+null_preds_list <- list()
+
+Richness_sub <- Richness_df %>%
+  filter(Functional.group %in% target_groups)
+
+for (i in 1:n_sims) {
+  
+  # Shuffle altitude WITHIN functional groups
+  df_null <- Richness_sub %>%
+    group_by(Functional.group) %>%
+    mutate(Altitude_scaled_null = sample(Altitude_scaled)) %>%
+    ungroup()
+  
+  # Fit null GAM
+  null_model <- gam(
+    Richness ~ Functional.group +
+      s(Altitude_scaled_null, k = 12) +
+      s(Altitude_scaled_null, by = Functional.group, k = 12),
+    data = df_null,
+    family = nb(link = "log")
+  )
+  
+  # Predict
+  null_newdata <- expand.grid(
+    Altitude_scaled_null = alt_grid,
+    Functional.group = target_groups
+  )
+  
+  preds <- predict(null_model, newdata = null_newdata, type = "response")
+  
+  null_preds_list[[i]] <- data.frame(
+    Altitude_scaled = alt_grid,
+    Functional.group = null_newdata$Functional.group,
+    Sim = i,
+    Null_Fit = preds
+  )
+}
+null_summary <- bind_rows(null_preds_list) %>%
+  group_by(Functional.group, Altitude_scaled) %>%
+  summarize(
+    Null_Mean = mean(Null_Fit),
+    Null_LCI = quantile(Null_Fit, 0.025),
+    Null_UCI = quantile(Null_Fit, 0.975),
+    .groups = "drop"
+  )
+plot_data <- left_join(
+  obs_newdata,
+  null_summary,
+  by = c("Altitude_scaled", "Functional.group")
+)
+ggplot(plot_data, aes(x = Altitude_scaled)) +
+  geom_ribbon(aes(ymin = Null_LCI, ymax = Null_UCI,
+                  fill = "Null Expectation (95% CI)"),
+              alpha = 0.5) +
+  geom_line(aes(y = Null_Mean),
+            color = "grey40", linetype = "dashed", size = 0.8) +
+  
+  # OBSERVED
+  geom_ribbon(aes(ymin = Obs_LCI, ymax = Obs_UCI,
+                  fill = "Observed GAM (95% CI)"),
+              alpha = 0.3) +
+  geom_line(aes(y = Obs_Fit, color = Functional.group),
+            size = 1.2) +
+  
+  facet_wrap(~ Functional.group, scales = "free_y") +
+  
+  theme_bw(base_size = 14) +
+  scale_fill_manual(values = c(
+    "Null Expectation (95% CI)" = "grey70",
+    "Observed GAM (95% CI)" = "black"
+  )) +
+  scale_color_manual(values = c("Predator" = "#d95f02",   
+                                "Saproxylic" = "#00A9FF")) +
+  
+  labs(
+    x = "Elevational gradient (scaled)",
+    y = "Predicted species richness",
+    fill = "Uncertainty",                
+    color = "Functional group"
+  ) +
+  
+  theme(
+    legend.position = "right",
+    strip.text = element_text(face = "bold"),
+    panel.grid.minor = element_blank()
+  )

@@ -11,8 +11,7 @@ df$Trees <- as.factor(df$Trees)
 df$Year <- as.factor(df$Year)
 df$Functional.group <- as.factor(df$Functional.group)
 
-model2 <- gam(Count ~ Functional.group + s(Altitude_scaled, by = Functional.group, k = 12) + s(Locality, bs = "re") + 
-    Year,
+model2 <- gam(Count ~ Functional.group + s(Altitude_scaled) + s(Altitude_scaled, Functional.group, bs = "fs") + s(Locality, bs = "re") + Year,
   data = df,
   family = nb(link = "log"),
   method = "REML"
@@ -163,7 +162,7 @@ Richness_df$Year <- as.factor(Richness_df$Year)
 Richness_df$Functional.group <- as.factor(Richness_df$Functional.group)
 model_richness <- gam(
   Richness ~ Functional.group + 
-    s(Altitude_scaled, by = Functional.group, k = 12) +  
+    s(Altitude_scaled, by = Functional.group, k = 12,bs = "fs") +  
     s(Locality, bs = "re") + 
     Year,
   data = Richness_df,

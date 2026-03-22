@@ -5,13 +5,21 @@ library(mgcv)
 library(ggplot2)
 library(tidyr)
 df <- read_excel("Beskydy_long.xlsx", sheet = "Sheet1")
-df$Altitude_scaled <- as.numeric(scale(df$Altitude, center = TRUE, scale = TRUE))
-df$Locality <- as.factor(df$Locality)
-df$Trees <- as.factor(df$Trees)
-df$Year <- as.factor(df$Year)
-df$Functional.group <- as.factor(df$Functional.group)
+df <- df %>%
+  mutate(
+    Altitude_scaled = as.numeric(scale(Altitude)),
+    Locality = as.factor(Locality),
+    Trees = as.factor(Trees),
+    Year = as.factor(Year),
+    Functional.group = as.factor(Functional.group)
+  )
 
-model2 <- gam(Count ~ Functional.group + s(Altitude_scaled) + s(Altitude_scaled, Functional.group, bs = "fs") + s(Locality, bs = "re") + Year,
+
+model2 <- gam(
+  Count ~ Functional.group +
+    s(Altitude_scaled, Functional.group, bs = "fs", k = 20) +
+    s(Locality, bs = "re") +
+    Year,
   data = df,
   family = nb(link = "log"),
   method = "REML"
@@ -24,128 +32,200 @@ gratia::draw(model2)
 plot(model2, select = 2)
 
 # Define the groups we are analyzing (Now including Herbivore)
-target_groups <- c("Detritivore", "Predator", "Herbivore")
+target_groups <- c("Detritivore", "Omnivore", "Herbivore","Saproxylic")
+
+df_sub <- df %>% filter(Functional.group %in% target_groups)
 
 # ---------------------------------------------------------
-# STEP 1: Predict the OBSERVED GAM curves
+# STEP 1: OBSERVED GAM PREDICTIONS
 # ---------------------------------------------------------
-cat("Step 1: Calculating observed GAM predictions...\n")
+cat("Step 1: Observed GAM predictions...\n")
 
-# Create a smooth grid of altitudes to draw the lines on
-alt_grid <- seq(min(df$Altitude_scaled, na.rm = TRUE), 
-                max(df$Altitude_scaled, na.rm = TRUE), 
+alt_grid <- seq(min(df$Altitude_scaled, na.rm = TRUE),
+                max(df$Altitude_scaled, na.rm = TRUE),
                 length.out = 100)
 
-# Set up dummy data to predict on for the target groups
 obs_newdata <- expand.grid(
   Altitude_scaled = alt_grid,
   Functional.group = target_groups,
-  # We mathematically exclude random effects, so dummy levels are fine
-  Locality = df$Locality[1], 
-  Year = df$Year[1]          
+  Locality = df$Locality[1],  # dummy (excluded later)
+  Year = df$Year[1]           # fixed reference level
 )
 
-# Predict on the link (log) scale to calculate proper confidence intervals
-obs_pred <- predict(model2, newdata = obs_newdata, 
-                    exclude = c("s(Locality)", "s(Year)"), # Ignore spatial/temporal random effects
-                    se.fit = TRUE, type = "link")
+obs_pred <- predict(
+  model2,
+  newdata = obs_newdata,
+  exclude = "s(Locality)",   # only random effect excluded
+  se.fit = TRUE,
+  type = "link"
+)
 
-# Convert back to the count scale (exponentiate)
-obs_newdata$Obs_Fit <- exp(obs_pred$fit)
-obs_newdata$Obs_LCI <- exp(obs_pred$fit - (1.96 * obs_pred$se.fit))
-obs_newdata$Obs_UCI <- exp(obs_pred$fit + (1.96 * obs_pred$se.fit))
+obs_newdata <- obs_newdata %>%
+  mutate(
+    Obs_Fit = exp(obs_pred$fit),
+    Obs_LCI = exp(obs_pred$fit - 1.96 * obs_pred$se.fit),
+    Obs_UCI = exp(obs_pred$fit + 1.96 * obs_pred$se.fit)
+  )
 
 # ---------------------------------------------------------
-# STEP 2: Simulate the NULL MODEL (Randomization)
+# STEP 2: NULL MODEL (CORRECTED!)
 # ---------------------------------------------------------
+cat("Step 2: Running null model simulations...\n")
+
 n_sims <- 999
-null_preds_list <- list()
-
-# Filter data just to the three target groups
-df_sub <- df %>% filter(Functional.group %in% target_groups)
-
-cat("Step 2: Running null model simulations (n =", n_sims, "). This may take a moment...\n")
+null_preds_list <- vector("list", n_sims)
 
 for (i in 1:n_sims) {
   
-  # Shuffle Altitude independently within each functional group
   df_null <- df_sub %>%
     group_by(Functional.group) %>%
     mutate(Altitude_scaled_null = sample(Altitude_scaled)) %>%
     ungroup()
   
-  # Fit a null GAM (Note: for speed in loops, we use the simpler gam call)
+  # IMPORTANT: SAME MODEL STRUCTURE AS REAL MODEL
   null_model <- gam(
     Count ~ Functional.group +
-      s(Altitude_scaled_null, k = 12) +
-      s(Altitude_scaled_null, by = Functional.group, k = 12),
+      s(Altitude_scaled_null, Functional.group, bs = "fs", k = 20) +
+      s(Locality, bs = "re") +
+      Year,
     data = df_null,
-    family = nb(link = "log")
+    family = nb(link = "log"),
+    method = "REML"
   )
   
-  # Predict the null curve
-  null_newdata <- expand.grid(Altitude_scaled_null = alt_grid, 
-                              Functional.group = target_groups)
+  null_newdata <- expand.grid(
+    Altitude_scaled_null = alt_grid,
+    Functional.group = target_groups,
+    Locality = df$Locality[1],
+    Year = df$Year[1]
+  )
   
-  preds <- predict(null_model, newdata = null_newdata, type = "response")
+  preds <- predict(
+    null_model,
+    newdata = null_newdata,
+    exclude = "s(Locality)",
+    type = "response"
+  )
   
-  # Save the results
-  null_preds_list[[i]] <- data.frame(Altitude_scaled = alt_grid, 
-                                     Functional.group = null_newdata$Functional.group, 
-                                     Sim = i, 
-                                     Null_Fit = preds)
+  null_preds_list[[i]] <- data.frame(
+    Altitude_scaled = alt_grid,
+    Functional.group = null_newdata$Functional.group,
+    Sim = i,
+    Null_Fit = preds
+  )
 }
 
 # ---------------------------------------------------------
-# STEP 3: Summarize the Null Model
+# STEP 3: SUMMARIZE NULL MODEL
 # ---------------------------------------------------------
-cat("Step 3: Summarizing results...\n")
+cat("Step 3: Summarizing null model...\n")
 
-# Calculate the mean and 95% confidence interval of the 100 randomizations
 null_summary <- bind_rows(null_preds_list) %>%
   group_by(Functional.group, Altitude_scaled) %>%
   summarize(
     Null_Mean = mean(Null_Fit),
-    Null_LCI = quantile(Null_Fit, 0.025),  # Lower boundary of random chance
-    Null_UCI = quantile(Null_Fit, 0.975),  # Upper boundary of random chance
+    Null_LCI = quantile(Null_Fit, 0.025),
+    Null_UCI = quantile(Null_Fit, 0.975),
     .groups = "drop"
   )
 
-# Combine observed ecological data and null expectation data for plotting
-plot_data <- left_join(obs_newdata, null_summary, by = c("Altitude_scaled", "Functional.group"))
+plot_data <- left_join(
+  obs_newdata,
+  null_summary,
+  by = c("Altitude_scaled", "Functional.group")
+)
 
 # ---------------------------------------------------------
-# STEP 4: Visualize with ggplot2 (Publication ready)
+# STEP 4: FINAL PLOT (PUBLICATION READY)
 # ---------------------------------------------------------
-cat("Step 4: Generating ggplot...\n")
+cat("Step 4: Running formal statistical test vs null...\n")
+
+# Function to compute deviation statistic
+calc_deviation <- function(obs, null) {
+  sum((obs - null)^2, na.rm = TRUE)
+}
+
+results_list <- list()
+
+for (g in target_groups) {
+  
+  # Observed curve
+  obs_curve <- plot_data %>%
+    filter(Functional.group == g) %>%
+    arrange(Altitude_scaled)
+  
+  obs_dev <- calc_deviation(obs_curve$Obs_Fit, obs_curve$Null_Mean)
+  
+  # Null deviations (each simulation vs mean null)
+  null_devs <- bind_rows(null_preds_list) %>%
+    filter(Functional.group == g) %>%
+    group_by(Sim) %>%
+    arrange(Altitude_scaled) %>%
+    summarize(
+      dev = calc_deviation(Null_Fit, obs_curve$Null_Mean),
+      .groups = "drop"
+    )
+  
+  # p-value = proportion of null >= observed
+  p_val <- mean(null_devs$dev >= obs_dev)
+  
+  results_list[[g]] <- data.frame(
+    Functional.group = g,
+    Observed_deviation = obs_dev,
+    Null_mean_deviation = mean(null_devs$dev),
+    p_value = p_val
+  )
+}
+
+test_results <- bind_rows(results_list)
+
+print(test_results)
+
+cat("Step 4: Plotting...\n")
 
 ggplot(plot_data, aes(x = Altitude_scaled)) +
   
-  # 1. The Null Model Expectation (Grey Ribbon) - MDE
-  geom_ribbon(aes(ymin = Null_LCI, ymax = Null_UCI, fill = "Null Expectation (95% CI)"), alpha = 0.5) +
-  geom_line(aes(y = Null_Mean), color = "grey40", linetype = "dashed", size = 0.8) +
+  # NULL MODEL
+  geom_ribbon(aes(ymin = Null_LCI, ymax = Null_UCI,
+                  fill = "Null Expectation (95% CI)"),
+              alpha = 0.5) +
+  geom_line(aes(y = Null_Mean),
+            color = "grey30", linetype = "dashed", size = 0.8) +
   
-  # 2. The Observed Ecological Data (Colored Ribbons and Lines)
-  geom_ribbon(aes(ymin = Obs_LCI, ymax = Obs_UCI, fill = "Observed GAM (95% CI)"), alpha = 0.3) +
-  geom_line(aes(y = Obs_Fit, color = Functional.group), size = 1.2) +
+  # OBSERVED DATA
+  geom_ribbon(aes(ymin = Obs_LCI, ymax = Obs_UCI,
+                  fill = "Observed GAM (95% CI)"),
+              alpha = 0.3) +
+  geom_line(aes(y = Obs_Fit, color = Functional.group),
+            size = 1.2) +
   
-  # Formatting
-  facet_wrap(~ Functional.group, scales = "free_y", nrow = 1) + # Set scales to free to see shapes clearly
-  theme_bw(base_size = 14) + 
-  scale_fill_manual(values = c("Null Expectation (95% CI)" = "grey60", 
-                               "Observed GAM (95% CI)" = "black")) + 
-  scale_color_manual(values = c("Detritivore" = "#7570b3",
-                                "Predator" = "#d95f02",   
-                                "Herbivore" = "#1b9e77")) +
+  facet_wrap(~ Functional.group, scales = "free_y", nrow = 1) +
+  
+  theme_bw(base_size = 14) +
+  
+  scale_fill_manual(values = c(
+    "Null Expectation (95% CI)" = "grey60",
+    "Observed GAM (95% CI)" = "black"
+  )) +
+  
+  scale_color_manual(values = c(
+    "Detritivore" = "#7570b3",
+    "Omnivore" = "#d95f02",
+    "Herbivore" = "#1b9e77",
+    "Saproxylic" = "#00A9FF"
+  )) +
   labs(
     x = "Elevational gradient (scaled)",
     y = "Predicted number of individuals",
     fill = "Uncertainty",
     color = "Functional group"
   ) +
-  theme(legend.position = "right",
-        strip.text = element_text(face = "bold", size = 14),
-        panel.grid.minor = element_blank())
+  
+  theme(
+    legend.position = "right",
+    strip.text = element_text(face = "bold", size = 14),
+    panel.grid.minor = element_blank()
+  )
 
 # Species richness #
 Richness_df <- df %>%

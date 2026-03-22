@@ -89,11 +89,11 @@ cat("Number of samples:", nrow(master_df), "\n")
 if (any(duplicated(master_df$SampleID))) {
   warning("Duplicate SampleIDs detected!")
 }
-write_xlsx(master_df, "Beskydy_Master_Merged.xlsx")
+write_xlsx(master_df, "Beskydy_Master_Merged1.xlsx")
 
 # Doing long format for functional groups #
 library(tidyverse)
-df <- read_excel("Beskydy_Master_Merged.xlsx", sheet = "all")
+df <- read_excel("Beskydy_Master_Merged1.xlsx", sheet = "all")
 Beskydy_Long <- df %>%
   pivot_longer(
     # Select all columns EXCEPT the first 8 metadata columns to be pivoted

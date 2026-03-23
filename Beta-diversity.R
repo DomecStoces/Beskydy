@@ -38,7 +38,7 @@ df_agg <- df_combined %>%
     Locality = as.factor(Locality)
   )
 
-# 5. Prepare aggregated community matrix & convert to Presence/Absence
+# 5. Prepare aggregated community matrix and convert to presence/absence
 comm_agg <- as.matrix(df_agg %>% select(-Locality, -Trees, -Altitude, -Altitude_scaled))
 rownames(comm_agg) <- df_agg$Locality
 comm_pa_agg <- ifelse(comm_agg > 0, 1, 0)
@@ -53,7 +53,7 @@ dist_jaccard_sqrt  <- sqrt(dist_jaccard)
 dist_simpson_sqrt  <- sqrt(dist_simpson)
 dist_richness_sqrt <- sqrt(dist_richness)
 
-# 7. PERMDISP: testing variance (categorical: Trees)
+# 7. PERMDISP: testing variance
 disp_jaccard <- betadisper(dist_jaccard_sqrt, df_agg$Trees)
 disp_simpson <- betadisper(dist_simpson_sqrt, df_agg$Trees)
 

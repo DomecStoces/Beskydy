@@ -1,7 +1,7 @@
 # Number of species for each row # 
 library(readxl)
 library(writexl)
-df <- read_excel("Beskydy_2007_2008_traits_final.xlsx", sheet = "chilo_diplo_iso_compo_names")
+df <- read_excel("Beskydy_2007_2008_traits_final.xlsx", sheet = "spiders_compo_names")
 df$species_richness <- rowSums(df[, -1] > 0)
 write_xlsx(df[, c("ID", "species_richness")], "species_richness.xlsx")
 
@@ -12,8 +12,8 @@ library(ggplot2)
 library(readxl)
 
 # 1.
-df <- read_excel("Beskydy_2007_2008_traits_final.xlsx", sheet = "carabids_FD")
-compo_names <- read_excel("Beskydy_2007_2008_traits_final.xlsx", sheet = "carabids_compo_names")
+df <- read_excel("Beskydy_2007_2008_traits_final.xlsx", sheet = "chilo_diplo_iso_FD")
+compo_names <- read_excel("Beskydy_2007_2008_traits_final.xlsx", sheet = "chilo_diplo_iso_compo_names")
 
 # 2. Initial
 metadata <- df
@@ -29,18 +29,21 @@ rownames(comm_matrix) <- compo_names$ID
 df_combined <- bind_cols(metadata_matched, as.data.frame(comm_matrix))
 
 df_agg <- df_combined %>%
-  drop_na(Trees, Altitude) %>%
-  group_by(Locality, Trees, Altitude) %>%
+  # Extract the 4th and 5th characters from the "DD.MM." string to get the Month
+  mutate(Month = as.factor(substr(Date, 4, 5))) %>% 
+  drop_na(Locality, Month, Year, Trees, Altitude) %>%
+  group_by(Locality, Month, Year, Trees, Altitude) %>%
   summarise(across(all_of(colnames(comm_matrix)), sum), .groups = "drop") %>%
   mutate(
     Altitude_scaled = scale(Altitude),
     Trees = as.factor(Trees),
-    Locality = as.factor(Locality)
-  )
+    Locality = as.factor(Locality),
+    Year = as.factor(Year))
 
 # 5. Prepare aggregated community matrix and convert to presence/absence
-comm_agg <- as.matrix(df_agg %>% select(-Locality, -Trees, -Altitude, -Altitude_scaled))
-rownames(comm_agg) <- df_agg$Locality
+comm_agg <- as.matrix(df_agg %>% 
+                        select(-Locality, -Trees, -Altitude, -Altitude_scaled, -Month, -Year))
+rownames(comm_agg) <- paste(df_agg$Locality, df_agg$Month, df_agg$Year, sep = "_")
 comm_pa_agg <- ifelse(comm_agg > 0, 1, 0)
 
 # 6. Calculate independent beta-diversity components
@@ -62,24 +65,27 @@ print(permutest(disp_jaccard, permutations = 999))
 print(permutest(disp_simpson, permutations = 999))
 
 # 8. PERMANOVA
-# Nestedness
-perm_jaccard <- adonis2(dist_jaccard_agg_sqrt ~ Trees + Altitude_scaled, 
-                               data = df_agg, 
-                               permutations = 999,
-                               by = "margin")
+# Overall compositional dissimilarity (Total beta-diversity)
+perm_jaccard <- adonis2(dist_jaccard_sqrt ~ Trees + Altitude_scaled + Year + Month, 
+                        data = df_agg, 
+                        permutations = 999,
+                        by = "margin",
+                        strata = df_agg$Locality)
 
-# Turnover
-perm_simpson <- adonis2(dist_simpson_agg_sqrt ~ Trees + Altitude_scaled, 
-                               data = df_agg, 
-                               permutations = 999,
-                               by = "margin")
-# Total beta-dievrsity
-perm_richness <- adonis2(dist_richness_agg_sqrt ~ Trees + Altitude_scaled, 
-                                data = df_agg, 
-                                permutations = 999,
-                                by = "margin")
+# Species turnover (Simpson index)
+perm_simpson <- adonis2(dist_simpson_sqrt ~ Trees + Altitude_scaled + Year + Month, 
+                        data = df_agg, 
+                        permutations = 999,
+                        by = "margin",
+                        strata = df_agg$Locality)
+# Species richness uniformity
+perm_richness <- adonis2(dist_richness_sqrt ~ Trees + Altitude_scaled + Year + Month, 
+                         data = df_agg, 
+                         permutations = 999,
+                         by = "margin",
+                         strata = df_agg$Locality)
 
-print("--- PERMANOVA of Elevational gradient and Trees ---")
+print("--- PERMANOVA of Elevational gradient, Trees, and Time ---")
 print(perm_jaccard)
 print(perm_simpson)
 print(perm_richness)

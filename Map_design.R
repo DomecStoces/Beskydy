@@ -84,7 +84,7 @@ final_map <- ggplot() +
   geom_spatraster(data = beskids_color_clean, alpha = 0.6, maxcell = Inf) +
   scale_fill_whitebox_c(
     palette = "muted", 
-    name = "Elevation\n(m a.s.l.)",
+    name = "Elevation\n[m a.s.l.]",
     na.value = "transparent",
     guide = guide_colorbar(order = 2)
   ) +

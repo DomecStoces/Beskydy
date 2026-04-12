@@ -83,11 +83,12 @@ final_map <- ggplot() +
   
   # 2. Second Layer: Semi-transparent Elevation Colors
   # ADDED maxcell = Inf here too!
-  geom_spatraster(data = beskids_color_clean, alpha = 0.5, maxcell = Inf) +
+  geom_spatraster(data = beskids_color_clean, alpha = 0.6, maxcell = Inf) +
   scale_fill_whitebox_c(
     palette = "muted", 
     name = "Elevation\n(m a.s.l.)",
-    na.value = "transparent"
+    na.value = "transparent",
+    guide = guide_colorbar(order = 2)
   ) +
   
   # 3. Contour Layer
@@ -109,19 +110,20 @@ final_map <- ggplot() +
   ) +
   scale_color_manual(
     values = c("Spruce" = "#117733", "Beech" = "#D55E00"), 
-    name = "Upper Canopy"
+    name = "Upper Canopy",
+    guide = guide_legend(order = 1)
   )+
   
   # 5. Map Annotations & Formatting
-  # coord_sf(expand = FALSE) forces the border to snap tightly to the map
   coord_sf(expand = FALSE) +
   annotation_scale(location = "br", width_hint = 0.2, text_cex = 1.0) +
   annotation_north_arrow(
     location = "tr", 
-    which_north = "true", 
-    style = north_arrow_fancy_orienteering,
-    height = unit(1, "cm"),
-    width = unit(1, "cm")
+    which_north = "true",
+    rotation = -10,
+    style = north_arrow_fancy_orienteering(),
+    height = unit(2, "cm"),
+    width = unit(2, "cm")
   ) +
   theme_minimal() +
   theme(
@@ -134,7 +136,6 @@ final_map <- ggplot() +
 
 # Display the map
 print(final_map)
-
 # Save for your manuscript
 ggsave("beskids_map.png", plot = final_map, width = 8, height = 6, dpi = 300)
 

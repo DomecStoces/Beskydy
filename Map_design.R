@@ -155,6 +155,8 @@ library(dplyr)
 library(ggplot2)
 library(rnaturalearth)
 library(ggrepel)
+library(osmdata)
+library(wdpar)
 
 # Read the raw data
 dat_text <- "Locality	GPS	Upper.canopy	Site.protection
@@ -238,11 +240,18 @@ cat(sprintf("Square Width: %.1f km\nSquare Height: %.1f km\nTotal Area: %.1f km^
 eu <- ne_countries(scale = "medium", continent = "Europe", returnclass = "sf")
 cz <- eu %>% filter(admin == "Czechia")
 
+# CHKO Beskydy polyggon from OSM
+beskydy_query <- opq(bbox = 'Czechia') %>%
+  add_osm_feature(key = 'name', value = 'Chráněná krajinná oblast Beskydy') %>%
+  osmdata_sf()
+beskids_sf <- beskydy_query$osm_multipolygons
+
 # Get the bounding box of your points in WGS84 (Degrees)
 crs_plot <- 3035  
 eu_p <- st_transform(eu, crs_plot)
 cz_p <- st_transform(cz, crs_plot)
-centroids <- st_centroid(eu_p)
+square_p   <- st_transform(square_wgs, crs_plot)
+beskids_p  <- st_transform(beskids_sf, crs_plot)
 # Extract coordinates and country codes for labeling
 label_df <- centroids %>%
   mutate(X = st_coordinates(geometry)[,1],
@@ -262,9 +271,21 @@ ylim <- c(cz_center_coords[2] - y_range, cz_center_coords[2] + y_range)
 
 # Build the map
 p_cz_overview <- ggplot() +
+  # Europe background (Land)
   geom_sf(data = eu_p, fill = "white", color = "grey50", linewidth = 0.25) +
+  
+  # Czech Republic
   geom_sf(data = cz_p, fill = "grey80", color = "grey50", linewidth = 0.4) +
-  geom_sf(data = square_p, fill = "white", color="black", alpha=0.6, linewidth= 0.8) +
+  
+  # The Beskids Mountains (in Green)
+  geom_sf(data = beskids_p, fill = "#74c476", color = "#238b45", 
+          alpha = 0.8, linewidth = 0.4) +
+  
+  # Your Study Area Square
+  geom_sf(data = square_p, fill = "white", color="black", 
+          alpha = 0.6, linewidth = 0.8) +
+  
+  # Country Labels
   geom_text_repel(
     data = label_df,
     aes(x = X, y = Y, label = iso_a2),
@@ -272,8 +293,15 @@ p_cz_overview <- ggplot() +
     color = "black",
     max.overlaps = Inf        
   ) +
+  
+  # Zoom Window
   coord_sf(xlim = xlim, ylim = ylim, expand = FALSE) +
-  theme_void()
+  
+  # Theme and Sea Background
+  theme_void() + 
+  theme(
+    panel.background = element_rect(fill = "#e0f3f8", color = NA)
+  )
 p_cz_overview
 
 # Save it

@@ -155,8 +155,8 @@ library(dplyr)
 library(ggplot2)
 library(rnaturalearth)
 library(ggrepel)
-library(osmdata)
 library(wdpar)
+library(ggspatial)
 
 # Read the raw data
 dat_text <- "Locality	GPS	Upper.canopy	Site.protection
@@ -201,25 +201,20 @@ dat_text <- "Locality	GPS	Upper.canopy	Site.protection
 
 dat_raw <- read.table(text = dat_text, header = TRUE, sep = "\t", stringsAsFactors = FALSE)
 
-# Extract numbers and convert to decimal degrees
 dat_clean <- dat_raw %>%
   mutate(
-    # Pull out all numeric blocks (ignores N, E, and weird symbols)
     coords_list = str_extract_all(GPS, "[0-9.]+"),
-    
-    # Calculate Lat (Items 1, 2, 3) and Lon (Items 4, 5, 6)
     lat = sapply(coords_list, function(x) as.numeric(x[1]) + as.numeric(x[2])/60 + as.numeric(x[3])/3600),
     lon = sapply(coords_list, function(x) as.numeric(x[4]) + as.numeric(x[5])/60 + as.numeric(x[6])/3600)
   ) %>%
   select(-coords_list)
 
-# Create the spatial object
 pts <- st_as_sf(dat_clean, coords = c("lon", "lat"), crs = 4326, remove = FALSE)
 
-# 1. Get WGS84 bounding box
+
+# --- 2. CREATE WGS84 BOUNDARIES ---
 bb_wgs <- st_bbox(pts)
 
-# 2. Expand by exactly 0.03 degrees to match your raster crop
 bb_buffered <- st_bbox(c(
   xmin = as.numeric(bb_wgs["xmin"]) - 0.03,
   ymin = as.numeric(bb_wgs["ymin"]) - 0.03,
@@ -227,32 +222,43 @@ bb_buffered <- st_bbox(c(
   ymax = as.numeric(bb_wgs["ymax"]) + 0.03
 ), crs = st_crs(4326))
 
-# 3. Convert to polygon
 square_wgs <- st_as_sfc(bb_buffered)
-square_area <- st_area(square_p)
-square_area_km2 <- as.numeric(square_area) / 1e6
-bbox_proj <- st_bbox(square_p)
-width_km <- as.numeric(bbox_proj["xmax"] - bbox_proj["xmin"]) / 1000
-height_km <- as.numeric(bbox_proj["ymax"] - bbox_proj["ymin"]) / 1000
-cat(sprintf("Square Width: %.1f km\nSquare Height: %.1f km\nTotal Area: %.1f km^2\n", 
-            width_km, height_km, square_area_km2))
-# Download basemap
+
+
+# --- 3. DOWNLOAD BASEMAPS AND PROTECTED AREAS ---
 eu <- ne_countries(scale = "medium", continent = "Europe", returnclass = "sf")
 cz <- eu %>% filter(admin == "Czechia")
 
-# CHKO Beskydy polyggon from OSM
-beskydy_query <- opq(bbox = 'Czechia') %>%
-  add_osm_feature(key = 'name', value = 'Chráněná krajinná oblast Beskydy') %>%
-  osmdata_sf()
-beskids_sf <- beskydy_query$osm_multipolygons
+Sys.setenv(CHROMOTE_CHROME = "C:/Program Files/Google/Chrome/Application/chrome.exe")
+cz_pa <- wdpa_fetch("CZE", wait = TRUE)
 
-# Get the bounding box of your points in WGS84 (Degrees)
+beskids_sf <- cz_pa %>% 
+  filter(if_any(where(is.character), ~ grepl("Beskydy", .x, ignore.case = TRUE)))
+
+
+# --- 4. PROJECT ALL SPATIAL DATA TO EPSG:3035 ---
 crs_plot <- 3035  
 eu_p <- st_transform(eu, crs_plot)
 cz_p <- st_transform(cz, crs_plot)
 square_p   <- st_transform(square_wgs, crs_plot)
 beskids_p  <- st_transform(beskids_sf, crs_plot)
-# Extract coordinates and country codes for labeling
+
+
+# --- 5. CALCULATE SQUARE AREA (Now that square_p exists!) ---
+square_area <- st_area(square_p)
+square_area_km2 <- as.numeric(square_area) / 1e6
+bbox_proj <- st_bbox(square_p)
+width_km <- as.numeric(bbox_proj["xmax"] - bbox_proj["xmin"]) / 1000
+height_km <- as.numeric(bbox_proj["ymax"] - bbox_proj["ymin"]) / 1000
+
+cat(sprintf("Square Width: %.1f km\nSquare Height: %.1f km\nTotal Area: %.1f km^2\n", 
+            width_km, height_km, square_area_km2))
+
+
+# --- 6. PREPARE LABELS AND ZOOM BOUNDARIES ---
+# Calculate centroids first
+centroids <- st_centroid(eu_p)
+
 label_df <- centroids %>%
   mutate(X = st_coordinates(geometry)[,1],
          Y = st_coordinates(geometry)[,2]) %>%
@@ -260,7 +266,6 @@ label_df <- centroids %>%
   select(admin, iso_a2, X, Y) %>%
   filter(iso_a2 %in% c("CZ", "DE", "PL", "AT", "SK", "HU", "CH", "SI"))
 
-# Center map around Czech Republic and define zoom window (in meters)
 cz_center <- st_centroid(cz_p)
 cz_center_coords <- st_coordinates(cz_center)
 
@@ -269,23 +274,15 @@ y_range <- 550000
 xlim <- c(cz_center_coords[1] - x_range, cz_center_coords[1] + x_range)
 ylim <- c(cz_center_coords[2] - y_range, cz_center_coords[2] + y_range)
 
-# Build the map
+
+# --- 7. BUILD THE MAP ---
 p_cz_overview <- ggplot() +
-  # Europe background (Land)
   geom_sf(data = eu_p, fill = "white", color = "grey50", linewidth = 0.25) +
-  
-  # Czech Republic
   geom_sf(data = cz_p, fill = "grey80", color = "grey50", linewidth = 0.4) +
-  
-  # The Beskids Mountains (in Green)
   geom_sf(data = beskids_p, fill = "#74c476", color = "#238b45", 
           alpha = 0.8, linewidth = 0.4) +
-  
-  # Your Study Area Square
   geom_sf(data = square_p, fill = "white", color="black", 
           alpha = 0.6, linewidth = 0.8) +
-  
-  # Country Labels
   geom_text_repel(
     data = label_df,
     aes(x = X, y = Y, label = iso_a2),
@@ -293,11 +290,15 @@ p_cz_overview <- ggplot() +
     color = "black",
     max.overlaps = Inf        
   ) +
-  
-  # Zoom Window
   coord_sf(xlim = xlim, ylim = ylim, expand = FALSE) +
-  
-  # Theme and Sea Background
+  annotation_scale(
+    location = "br",        
+    width_hint = 0.25,      
+    bar_cols = c("black", "white"), 
+    text_cex = 1.1,         
+    pad_x = unit(0.5, "cm"), 
+    pad_y = unit(0.5, "cm")  
+  ) +
   theme_void() + 
   theme(
     panel.background = element_rect(fill = "#e0f3f8", color = NA)
@@ -305,6 +306,12 @@ p_cz_overview <- ggplot() +
 p_cz_overview
 
 # Save it
-tiff('p_cz_overview.tiff', units = "in", width = 8, height = 6, res = 600)
-p_cz_overview
-dev.off()
+ggsave(
+  filename = "map_panelA.pdf", 
+  plot = p_cz_overview, 
+  device = "pdf",
+  width = 10,     
+  height = 8,   
+  units = "in",
+  colormodel = "srgb"
+)

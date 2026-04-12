@@ -1,3 +1,5 @@
+# Map panel B: The detailed study area
+
 library(tidyverse)
 library(sf)
 library(terra)
@@ -8,6 +10,7 @@ library(ggplot2)
 library(ggspatial)
 library(ggnewscale)
 library(magick)
+library(ggrepel)
 
 # ---------------------------------------------------------
 # 1. READ AND PREPARE THE DATA
@@ -33,7 +36,13 @@ df_parsed <- df %>%
   filter(!is.na(Lat) & !is.na(Lon))
 
 sites_sf <- st_as_sf(df_parsed, coords = c("Lon", "Lat"), crs = 4326)
-
+protected_area <- sites_sf %>%
+  # Filter for protected sites (handling potential capitalization differences)
+  filter(tolower(Site.protection) == "yes") %>%
+  # Combine all points into a single geometry
+  st_union() %>%
+  # Draw the outer boundary (convex hull) around them
+  st_convex_hull()
 # ---------------------------------------------------------
 # 2. FETCH, SMOOTH, AND CALCULATE HILLSHADE
 # ---------------------------------------------------------
@@ -86,7 +95,7 @@ final_map <- ggplot() +
     palette = "muted", 
     name = "Elevation\n[m a.s.l.]",
     na.value = "transparent",
-    guide = guide_colorbar(order = 2)
+    guide = guide_colorbar(order = 3)
   ) +
   
   # 3. Contour Layer
@@ -98,7 +107,23 @@ final_map <- ggplot() +
     alpha = 0.4,
     binwidth = 50    
   ) +
-  
+  new_scale_fill() + geom_sf(
+    data = protected_area,
+    aes(fill = "Protected regime", color = "Protected regime"), 
+    alpha = 0.2,           
+    linewidth = 0.8,       
+    linetype = "dashed"    
+  ) + scale_fill_manual(
+    name = "Nature conservation",
+    values = c("Protected regime" = "#0072B2"),
+    guide = guide_legend(order = 2) 
+  ) +
+    scale_color_manual(
+      name = "Nature conservation",
+      values = c("Protected regime" = "#0072B2"),
+      guide = guide_legend(order = 2) 
+    ) +
+    new_scale_color() +
   # 4. Points Layer
   geom_spatvector(
     data = sites_sf, 
@@ -110,7 +135,18 @@ final_map <- ggplot() +
     name = "Dominant tree species",
     guide = guide_legend(order = 1)
   ) +
-  
+  geom_text_repel(
+    data = sites_sf,
+    aes(label = Locality, geometry = geometry),
+    stat = "sf_coordinates",   # Tells ggrepel how to read the sf coordinates
+    size = 3.5,
+    color = "black",
+    fontface = "bold",
+    bg.color = "white",        
+    bg.r = 0.10,               
+    min.segment.length = 0.5,  
+    point.padding = NA         
+  ) +
   # 5. Map Annotations & Formatting
   coord_sf(expand = FALSE) +
   annotation_scale(

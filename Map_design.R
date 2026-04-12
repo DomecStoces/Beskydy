@@ -16,99 +16,125 @@ library(magick)
 # Read your dataset
 df <- read_excel("map.xlsx", sheet = "List1")
 
-# Parse the complex GPS strings into Decimal Degrees
+# Parse GPS, filtering out any empty or broken rows to prevent errors
 df_parsed <- df %>%
+  filter(!is.na(GPS) & GPS != "") %>%
   mutate(
-    # Use regular expressions to extract all numbers (including decimals) from the string
-    # This smartly ignores the ° and ´´ symbols which can be tricky to parse natively
     nums = str_extract_all(GPS, "\\d+\\.?\\d*"),
-    
-    # Extract Latitude components (first 3 numbers)
     lat_deg = as.numeric(sapply(nums, `[`, 1)),
     lat_min = as.numeric(sapply(nums, `[`, 2)),
     lat_sec = as.numeric(sapply(nums, `[`, 3)),
-    
-    # Extract Longitude components (next 3 numbers)
     lon_deg = as.numeric(sapply(nums, `[`, 4)),
     lon_min = as.numeric(sapply(nums, `[`, 5)),
     lon_sec = as.numeric(sapply(nums, `[`, 6)),
-    
-    # Convert DMS to Decimal Degrees formula: Degrees + (Minutes/60) + (Seconds/3600)
     Lat = lat_deg + (lat_min / 60) + (lat_sec / 3600),
     Lon = lon_deg + (lon_min / 60) + (lon_sec / 3600)
   ) %>%
-  # Clean up the temporary parsing columns
-  select(-nums, -lat_deg, -lat_min, -lat_sec, -lon_deg, -lon_min, -lon_sec)
+  filter(!is.na(Lat) & !is.na(Lon))
 
-# ---------------------------------------------------------
-# 2. CONVERT TO SPATIAL OBJECTS
-# ---------------------------------------------------------
-
-# Convert the dataframe to an sf spatial object using EPSG:4326 (WGS84)
 sites_sf <- st_as_sf(df_parsed, coords = c("Lon", "Lat"), crs = 4326)
 
-# Convert to a terra SpatVector (which tidyterra prefers)
-sites_vect <- vect(sites_sf)
-
 # ---------------------------------------------------------
-# 3. FETCH ELEVATION DATA (DEM)
+# 2. FETCH, SMOOTH, AND CALCULATE HILLSHADE
 # ---------------------------------------------------------
 
-# Download 30-second resolution elevation data for Czechia (downloads to temp dir)
 cz_dem <- elevation_30s(country = "CZE", path = tempdir())
 
-# To make the map look nice and render fast, let's crop the elevation raster 
-# to just the Beskids region based on the extent of your points.
-# We add a small buffer (0.05 degrees, roughly 5km) around the bounding box.
-bbox <- ext(sites_vect)
-bbox_buffered <- ext(bbox[1]-0.05, bbox[2]+0.05, bbox[3]-0.05, bbox[4]+0.05)
+# 1. Create an EVEN WIDER buffer (0.15 degrees) for the background math
+bbox <- ext(vect(sites_sf))
+bbox_wide <- ext(bbox[1]-0.15, bbox[2]+0.15, bbox[3]-0.15, bbox[4]+0.15)
+beskids_dem_wide <- crop(cz_dem, bbox_wide)
 
-# Crop the digital elevation model
-beskids_dem <- crop(cz_dem, bbox_buffered)
+# 2. Increase resolution on the wide raster
+beskids_dem_highres <- disagg(beskids_dem_wide, fact = 5, method = "bilinear")
+
+# 3. Apply Focal smoothing for organic contours
+smooth_window <- matrix(1/81, nrow = 9, ncol = 9)
+beskids_dem_contours <- focal(beskids_dem_highres, w = smooth_window, na.rm = TRUE)
+
+# 4. Calculate Hillshade
+slope <- terrain(beskids_dem_highres, "slope", unit = "radians")
+aspect <- terrain(beskids_dem_highres, "aspect", unit = "radians")
+hillshade <- shade(slope, aspect, angle = 45, direction = 315) 
+
+# 5. THE EXPANDED EDGE FIX: Crop to a ~3km buffer (0.03 degrees)
+bbox_clean <- ext(bbox[1]-0.03, bbox[2]+0.03, bbox[3]-0.03, bbox[4]+0.03)
+
+hillshade_clean <- crop(hillshade, bbox_clean)
+beskids_color_clean <- crop(beskids_dem_highres, bbox_clean)
+beskids_contours_clean <- crop(beskids_dem_contours, bbox_clean)
 
 # ---------------------------------------------------------
-# 4. CREATE THE MAP WITH TIDYTERRA
+# 3. BUILD THE FINAL MANUSCRIPT MAP
 # ---------------------------------------------------------
 
-# Generate the plot
-map_plot <- ggplot() +
-  # 1. Add the elevation raster
-  geom_spatraster(data = beskids_dem) +
-  # Use tidyterra's built-in whitebox palettes which are excellent for elevation
+final_map <- ggplot() +
+  
+  # 1. Base Layer: The Grey Hillshade
+  # ADDED maxcell = Inf to fix the edgy shading!
+  geom_spatraster(data = hillshade_clean, show.legend = FALSE, maxcell = Inf) +
+  scale_fill_gradientn(
+    colours = grey(0:100 / 100),
+    na.value = "transparent"
+  ) +
+  
+  # Initialize a new color scale so we don't overwrite the grey shadows
+  new_scale_fill() + 
+  
+  # 2. Second Layer: Semi-transparent Elevation Colors
+  # ADDED maxcell = Inf here too!
+  geom_spatraster(data = beskids_color_clean, alpha = 0.5, maxcell = Inf) +
   scale_fill_whitebox_c(
-    palette = "muted",
+    palette = "muted", 
     name = "Elevation\n(m a.s.l.)",
     na.value = "transparent"
   ) +
   
-  # 2. Add your 38 site locations over the raster
+  # 3. Contour Layer
+  # maxcell = Inf preserves our smooth lines, text removed
+  geom_spatraster_contour(
+    data = beskids_contours_clean,
+    maxcell = Inf,
+    color = "black",
+    linewidth = 0.2, 
+    alpha = 0.4,
+    binwidth = 50    
+  ) +
+  
+  # 4. Points Layer
   geom_spatvector(
-    data = sites_vect, 
+    data = sites_sf, 
     aes(color = Upper.canopy), 
-    size = 3.5, 
-    alpha = 0.9
+    size = 3.5
   ) +
-  
-  # Set colors manually for the canopy types present in your dataset
   scale_color_manual(
-    values = c("Spruce" = "#117733", "Beech" = "#D55E00"),
+    values = c("Spruce" = "#117733", "Beech" = "#D55E00"), 
     name = "Upper Canopy"
-  ) +
+  )+
   
-  # 3. Formatting
-  labs(
-    title = "Elevational Gradient of Study Sites",
-    subtitle = "Moravian-Silesian Beskids Mts.",
-    x = "Longitude",
-    y = "Latitude"
+  # 5. Map Annotations & Formatting
+  # coord_sf(expand = FALSE) forces the border to snap tightly to the map
+  coord_sf(expand = FALSE) +
+  annotation_scale(location = "br", width_hint = 0.2, text_cex = 1.0) +
+  annotation_north_arrow(
+    location = "tr", 
+    which_north = "true", 
+    style = north_arrow_fancy_orienteering,
+    height = unit(1, "cm"),
+    width = unit(1, "cm")
   ) +
   theme_minimal() +
   theme(
-    plot.title = element_text(face = "bold", size = 14),
+    panel.grid = element_blank(),
+    panel.border = element_rect(fill = NA, color = "black", linewidth = 1),
+    axis.title = element_blank(),
     legend.position = "right",
-    panel.grid = element_blank()
+    legend.background = element_rect(fill = "white", color = NA)
   )
 
 # Display the map
-print(map_plot)
+print(final_map)
+
+# Save for your manuscript
+ggsave("beskids_map.png", plot = final_map, width = 8, height = 6, dpi = 300)
 

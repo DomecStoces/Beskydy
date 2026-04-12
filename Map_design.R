@@ -71,18 +71,16 @@ beskids_contours_clean <- crop(beskids_dem_contours, bbox_clean)
 final_map <- ggplot() +
   
   # 1. Base Layer: The Grey Hillshade
-  # ADDED maxcell = Inf to fix the edgy shading!
   geom_spatraster(data = hillshade_clean, show.legend = FALSE, maxcell = Inf) +
   scale_fill_gradientn(
     colours = grey(0:100 / 100),
     na.value = "transparent"
   ) +
   
-  # Initialize a new color scale so we don't overwrite the grey shadows
+  # Initialize a new color scale
   new_scale_fill() + 
   
   # 2. Second Layer: Semi-transparent Elevation Colors
-  # ADDED maxcell = Inf here too!
   geom_spatraster(data = beskids_color_clean, alpha = 0.6, maxcell = Inf) +
   scale_fill_whitebox_c(
     palette = "muted", 
@@ -92,7 +90,6 @@ final_map <- ggplot() +
   ) +
   
   # 3. Contour Layer
-  # maxcell = Inf preserves our smooth lines, text removed
   geom_spatraster_contour(
     data = beskids_contours_clean,
     maxcell = Inf,
@@ -110,13 +107,17 @@ final_map <- ggplot() +
   ) +
   scale_color_manual(
     values = c("Spruce" = "#117733", "Beech" = "#D55E00"), 
-    name = "Upper Canopy",
+    name = "Dominant tree species",
     guide = guide_legend(order = 1)
-  )+
+  ) +
   
   # 5. Map Annotations & Formatting
   coord_sf(expand = FALSE) +
-  annotation_scale(location = "br", width_hint = 0.2, text_cex = 1.0) +
+  annotation_scale(
+    location = "br", 
+    width_hint = 0.3, 
+    text_cex = 1.0
+  ) +
   annotation_north_arrow(
     location = "tr", 
     which_north = "true",
@@ -136,6 +137,13 @@ final_map <- ggplot() +
 
 # Display the map
 print(final_map)
-# Save for your manuscript
-ggsave("beskids_map.png", plot = final_map, width = 8, height = 6, dpi = 300)
+ggsave(
+  filename = "beskids_map.pdf", 
+  plot = final_map, 
+  device = "pdf",
+  width = 10,     
+  height = 8,   
+  units = "in",
+  colormodel = "srgb"
+)
 

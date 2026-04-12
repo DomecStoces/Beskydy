@@ -147,3 +147,136 @@ ggsave(
   colormodel = "srgb"
 )
 
+# Panel A of Czech Republic with square around the study area
+library(tidyr)
+library(stringr)
+library(sf)
+library(dplyr)
+library(ggplot2)
+library(rnaturalearth)
+library(ggrepel)
+
+# Read the raw data
+dat_text <- "Locality	GPS	Upper.canopy	Site.protection
+1	N49°30´47.5´´ E018°20´37.1´´	Spruce	No
+2	N49°30´10.7 E018°20´51.5´´	Beech	No
+3	N49°29´02.5´´ E018°21´08.7´´	Beech	No
+4	N49°29´01.9´´ E018°21´23.0´´	Spruce	No
+5	N49°29´02.0´´ E018°22´33.3´´	Beech	No
+6	N49°29´04.5´´ E018°22´16.0´´	Beech	Yes
+7	N49°29´42.6´´ E018°21´03.0´´	Beech	Yes
+8	N49°30´10.9´´ E018°23´04.4´´	Spruce	No
+9	N49°30´15.5´´ E018°23´02.0´´	Spruce	No
+10	N49°30´13.5´´ E018°24´14.2´´	Spruce	No
+11	N49°31´08.6´´ E018°23´19.9´´	Spruce	No
+12	N49°30´57.1´´ E018°22´54.4´´	Beech	Yes
+13	N49°30´55.0´´ E018°22´22.1´´	Spruce	No
+14	N49°31´03.9´´ E018°21´55.9´´	Spruce	No
+15	N49°31´19.1´´ E018°22´09.4´´	Spruce	No
+16	N49°30´31.7´´ E018´19´24.3´´	Spruce	No
+17	N49°29´55.2´´ E018°20´26.1´´	Spruce	No
+18	N49°28´57.0´´ E018°20´38.2´´	Spruce	No
+19	N49°28´07.0´´ E018°21´19.6´´	Spruce	Yes
+20	N49°27´56.5´´ E018°21´04.6´´	Spruce	Yes
+21	N49°28´44.6´´ E018°22´43.3´´	Beech	No
+22	N49°28´36.2´´ E018°22´54.0´´	Spruce	No
+23	N49°28´24.6´´ E018°24´59.5´´	Spruce	No
+24	N49°28´28.4´´ E018°25´01.5´´	Spruce	No
+25	N49°29´29.3´´ E018°21´00.6´´	Beech	No
+26	N49°29´27.8´´ E018°20´58.1´´	Spruce	No
+27	N49°30´32.6´´ E018°18´13.2´´	Beech	No
+28	N49°30´40.6´´ E018°18´10.7´´	Beech	No
+29	N49°31´38.5´´ E018°23´12.9´´	Spruce	No
+30	N49°31´17.1´´ E018°18´57.4´´	Spruce	No
+31	N49°29´45.2´´ E018°21´34.2´´	Spruce	Yes
+32	N49°30´18.9´´ E018°22´14.8´´	Spruce	Yes
+33	N49°30´17.4´´ E018°22´08.1´´	Spruce	No
+34	N49°30´08.5´´ E018°22´20.6´´	Spruce	Yes
+35	N49°31´09.6´´ E018°19´13.2´´	Beech	No
+36	N49°28´46.6´´ E018°23´39.6´´	Spruce	No
+37	N49°28´19.5´´ E018°23´34.9´´	Spruce	No
+38	N49°31´13.5´´ E018°18´06.6´´	Spruce	No"
+
+dat_raw <- read.table(text = dat_text, header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+# Extract numbers and convert to decimal degrees
+dat_clean <- dat_raw %>%
+  mutate(
+    # Pull out all numeric blocks (ignores N, E, and weird symbols)
+    coords_list = str_extract_all(GPS, "[0-9.]+"),
+    
+    # Calculate Lat (Items 1, 2, 3) and Lon (Items 4, 5, 6)
+    lat = sapply(coords_list, function(x) as.numeric(x[1]) + as.numeric(x[2])/60 + as.numeric(x[3])/3600),
+    lon = sapply(coords_list, function(x) as.numeric(x[4]) + as.numeric(x[5])/60 + as.numeric(x[6])/3600)
+  ) %>%
+  select(-coords_list)
+
+# Create the spatial object
+pts <- st_as_sf(dat_clean, coords = c("lon", "lat"), crs = 4326, remove = FALSE)
+
+# 1. Get WGS84 bounding box
+bb_wgs <- st_bbox(pts)
+
+# 2. Expand by exactly 0.03 degrees to match your raster crop
+bb_buffered <- st_bbox(c(
+  xmin = as.numeric(bb_wgs["xmin"]) - 0.03,
+  ymin = as.numeric(bb_wgs["ymin"]) - 0.03,
+  xmax = as.numeric(bb_wgs["xmax"]) + 0.03,
+  ymax = as.numeric(bb_wgs["ymax"]) + 0.03
+), crs = st_crs(4326))
+
+# 3. Convert to polygon
+square_wgs <- st_as_sfc(bb_buffered)
+square_area <- st_area(square_p)
+square_area_km2 <- as.numeric(square_area) / 1e6
+bbox_proj <- st_bbox(square_p)
+width_km <- as.numeric(bbox_proj["xmax"] - bbox_proj["xmin"]) / 1000
+height_km <- as.numeric(bbox_proj["ymax"] - bbox_proj["ymin"]) / 1000
+cat(sprintf("Square Width: %.1f km\nSquare Height: %.1f km\nTotal Area: %.1f km^2\n", 
+            width_km, height_km, square_area_km2))
+# Download basemap
+eu <- ne_countries(scale = "medium", continent = "Europe", returnclass = "sf")
+cz <- eu %>% filter(admin == "Czechia")
+
+# Get the bounding box of your points in WGS84 (Degrees)
+crs_plot <- 3035  
+eu_p <- st_transform(eu, crs_plot)
+cz_p <- st_transform(cz, crs_plot)
+centroids <- st_centroid(eu_p)
+# Extract coordinates and country codes for labeling
+label_df <- centroids %>%
+  mutate(X = st_coordinates(geometry)[,1],
+         Y = st_coordinates(geometry)[,2]) %>%
+  st_drop_geometry() %>%
+  select(admin, iso_a2, X, Y) %>%
+  filter(iso_a2 %in% c("CZ", "DE", "PL", "AT", "SK", "HU", "CH", "SI"))
+
+# Center map around Czech Republic and define zoom window (in meters)
+cz_center <- st_centroid(cz_p)
+cz_center_coords <- st_coordinates(cz_center)
+
+x_range <- 700000   
+y_range <- 550000   
+xlim <- c(cz_center_coords[1] - x_range, cz_center_coords[1] + x_range)
+ylim <- c(cz_center_coords[2] - y_range, cz_center_coords[2] + y_range)
+
+# Build the map
+p_cz_overview <- ggplot() +
+  geom_sf(data = eu_p, fill = "white", color = "grey50", linewidth = 0.25) +
+  geom_sf(data = cz_p, fill = "grey80", color = "grey50", linewidth = 0.4) +
+  geom_sf(data = square_p, fill = "white", color="black", alpha=0.6, linewidth= 0.8) +
+  geom_text_repel(
+    data = label_df,
+    aes(x = X, y = Y, label = iso_a2),
+    size = 5.2,
+    color = "black",
+    max.overlaps = Inf        
+  ) +
+  coord_sf(xlim = xlim, ylim = ylim, expand = FALSE) +
+  theme_void()
+p_cz_overview
+
+# Save it
+tiff('p_cz_overview.tiff', units = "in", width = 8, height = 6, res = 600)
+p_cz_overview
+dev.off()

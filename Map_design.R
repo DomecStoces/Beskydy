@@ -5,6 +5,10 @@ library(tidyterra)
 library(geodata)
 library(readxl)
 library(ggplot2)
+library(ggspatial)
+library(ggnewscale)
+library(magick)
+
 # ---------------------------------------------------------
 # 1. READ AND PREPARE THE DATA
 # ---------------------------------------------------------

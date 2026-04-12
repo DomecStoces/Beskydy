@@ -12,7 +12,7 @@ library(ggplot2)
 library(readxl)
 
 # 1.
-df <- read_excel("Beskydy_2007_2008_traits_final.xlsx", sheet = "chilo_diplo_iso_FD")
+df <- read_excel("Beskydy_2007_2008_traits_final.xlsx", sheet = "spiders_FD")
 compo_names <- read_excel("Beskydy_2007_2008_traits_final.xlsx", sheet = "chilo_diplo_iso_compo_names")
 
 # 2. Initial

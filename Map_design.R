@@ -138,8 +138,8 @@ final_map <- ggplot() +
   geom_text_repel(
     data = sites_sf,
     aes(label = Locality, geometry = geometry),
-    stat = "sf_coordinates",   # Tells ggrepel how to read the sf coordinates
-    size = 3.5,
+    stat = "sf_coordinates",   
+    size = 5,
     color = "black",
     fontface = "bold",
     bg.color = "white",        
@@ -152,7 +152,7 @@ final_map <- ggplot() +
   annotation_scale(
     location = "br", 
     width_hint = 0.3, 
-    text_cex = 1.0
+    text_cex = 2
   ) +
   annotation_north_arrow(
     location = "tr", 
@@ -162,11 +162,13 @@ final_map <- ggplot() +
     height = unit(2, "cm"),
     width = unit(2, "cm")
   ) +
-  theme_minimal() +
+  theme_minimal(base_size=14) +
   theme(
     panel.grid = element_blank(),
     panel.border = element_rect(fill = NA, color = "black", linewidth = 1),
     axis.title = element_blank(),
+    axis.text = element_text(size = 14),
+    legend.text = element_text(size = 14),
     legend.position = "right",
     legend.background = element_rect(fill = "white", color = NA)
   )
@@ -328,7 +330,7 @@ p_cz_overview <- ggplot() +
   ) +
   coord_sf(xlim = xlim, ylim = ylim, expand = FALSE) +
   annotation_scale(
-    location = "bl",        
+    location = "br",        
     width_hint = 0.25,      
     bar_cols = c("black", "white"), 
     text_cex = 1.1,         

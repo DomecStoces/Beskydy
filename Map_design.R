@@ -328,7 +328,7 @@ p_cz_overview <- ggplot() +
   ) +
   coord_sf(xlim = xlim, ylim = ylim, expand = FALSE) +
   annotation_scale(
-    location = "br",        
+    location = "bl",        
     width_hint = 0.25,      
     bar_cols = c("black", "white"), 
     text_cex = 1.1,         

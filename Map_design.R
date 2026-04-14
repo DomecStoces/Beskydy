@@ -118,7 +118,7 @@ final_map <- ggplot() +
     name = "Dominant tree species",
     guide = guide_legend(order = 1)
   ) + scale_shape_manual(
-    name = "Nature conservation",
+    name = "Nature reserve",
     values = c("With strict protection" = 17, "Without strict protection" = 16),
     guide = guide_legend(order = 2)
   ) +

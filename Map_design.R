@@ -35,14 +35,13 @@ df_parsed <- df %>%
   ) %>%
   filter(!is.na(Lat) & !is.na(Lon))
 
-sites_sf <- st_as_sf(df_parsed, coords = c("Lon", "Lat"), crs = 4326)
-protected_area <- sites_sf %>%
-  # Filter for protected sites (handling potential capitalization differences)
-  filter(tolower(Site.protection) == "yes") %>%
-  # Combine all points into a single geometry
-  st_union() %>%
-  # Draw the outer boundary (convex hull) around them
-  st_convex_hull()
+sites_sf <- st_as_sf(df_parsed, coords = c("Lon", "Lat"), crs = 4326) %>%
+  # Create a clean column for the legend based on the 'yes'/'no' data
+  mutate(
+    Protection_Status = ifelse(tolower(Site.protection) == "yes", 
+                               "With strict protection", 
+                               "Without strict protection")
+  )
 # ---------------------------------------------------------
 # 2. FETCH, SMOOTH, AND CALCULATE HILLSHADE
 # ---------------------------------------------------------
@@ -107,33 +106,21 @@ final_map <- ggplot() +
     alpha = 0.4,
     binwidth = 50    
   ) +
-  new_scale_fill() + geom_sf(
-    data = protected_area,
-    aes(fill = "Protected regime", color = "Protected regime"), 
-    alpha = 0.2,           
-    linewidth = 0.8,       
-    linetype = "dashed"    
-  ) + scale_fill_manual(
-    name = "Nature conservation",
-    values = c("Protected regime" = "#0072B2"),
-    guide = guide_legend(order = 2) 
-  ) +
-    scale_color_manual(
-      name = "Nature conservation",
-      values = c("Protected regime" = "#0072B2"),
-      guide = guide_legend(order = 2) 
-    ) +
     new_scale_color() +
   # 4. Points Layer
   geom_spatvector(
     data = sites_sf, 
-    aes(color = Upper.canopy), 
+    aes(color = Upper.canopy, shape = Protection_Status), 
     size = 3.5
   ) +
   scale_color_manual(
     values = c("Spruce" = "#117733", "Beech" = "#D55E00"), 
     name = "Dominant tree species",
     guide = guide_legend(order = 1)
+  ) + scale_shape_manual(
+    name = "Nature conservation",
+    values = c("With strict protection" = 17, "Without strict protection" = 16),
+    guide = guide_legend(order = 2)
   ) +
   geom_text_repel(
     data = sites_sf,

@@ -7,7 +7,7 @@ df <- read_excel("Beskydy_2007_2008_traits_final.xlsx", sheet = "spiders_FD")
 df$Altitude_scaled <- as.numeric(scale(df$Altitude, center = TRUE, scale = TRUE))
 df$Locality <- as.factor(df$Locality)
 df$Trees <- as.factor(df$Trees)
-df$Year <- as.factor(df$Year)
+df$Time.period <- as.factor(df$Time.period)
 df <- df %>%
   mutate(
     Exposition2 = sapply(strsplit(as.character(Exposition), "_"), function(x) mean(as.numeric(x))),
@@ -42,8 +42,7 @@ df$Trophic_scaled <- (df$Trophic_01 * (n - 1) + 0.5) / n
 
 mod_gam1 <- gam(
   Size ~ s(Locality, bs = "re") +
-    s(Altitude_scaled, bs = "cr",k=3) + Exposition2 +
-    Year,
+    s(Altitude_scaled, bs = "cr",k=3) + Exposition2 + Site.protection + s(Time.period, bs = "re") + Trees,
   data   = df,
   family = gaussian(link="log"),
   method = "REML"
@@ -51,16 +50,32 @@ mod_gam1 <- gam(
 
 mod_gam2 <- gam(
   Size ~ s(Locality, bs = "re") +
-    Altitude_scaled + Exposition2 + Site.protection + Year,
+    Altitude_scaled + Exposition2 + Site.protection + s(Time.period, bs = "re") + Trees,
   data   = df,
   family = gaussian(link="log"),
   method = "REML"
 )
 
 mod_gam2 <- gam(
+  Trophic_scaled ~ s(Locality, bs = "re") +
+    Altitude_scaled + Exposition2 + Site.protection + s(Time.period, bs = "re") + Trees,
+  data   = df,
+  family = betar(link="logit"),
+  method = "REML"
+)
+
+mod_gam2 <- gam(
+  Dispersal_scaled ~ s(Locality, bs = "re") +
+    Altitude_scaled + Exposition2 + Site.protection + s(Time.period, bs = "re") + Trees,
+  data   = df,
+  family = betar(link="cloglog"),
+  method = "REML"
+)
+
+mod_gam2 <- gam(
   Rao ~ 
     s(Locality, bs = "re") + 
-    Altitude_scaled  + Exposition2 + Site.protection + Year,
+    Altitude_scaled  + Exposition2 + Site.protection + s(Time.period, bs = "re") + Trees,
   data   = df,
   family = tw(link="log"), select = TRUE,
   method = "REML"
@@ -71,7 +86,7 @@ par(mfrow = c(2, 2))
 gam.check(mod_gam2)
 concurvity(mod_gam2, full = TRUE)
 gratia::draw(mod_gam2)
-plot(mod_gam1, select = 2)
+plot(mod_gam2, select = 2)
 
 ### Plotting the effect of Altitude_scaled on CWM traits ###
 library(gratia)

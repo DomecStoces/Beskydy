@@ -42,7 +42,7 @@ df$Trophic_scaled <- (df$Trophic_01 * (n - 1) + 0.5) / n
 
 mod_gam2 <- gam(
   Size ~ s(Locality, bs = "re") +
-    Altitude_scaled + Exposition2 + Site.protection + Year + s(Month, bs = "re") + Trees,
+    Altitude_scaled + Exposition2 + Site.protection + s(Time.period, bs = "re") + Trees,
   data   = df,
   family = gaussian(link="log"),
   method = "REML"
@@ -50,7 +50,7 @@ mod_gam2 <- gam(
 
 mod_gam2 <- gam(
   Trophic_scaled ~ s(Locality, bs = "re") +
-    Altitude_scaled + Exposition2 + Site.protection + s(Month, bs = "re") + Trees,
+    Altitude_scaled + Exposition2 + Site.protection + s(Time.period, bs = "re") + Trees,
   data   = df,
   family = betar(link="logit"),
   method = "REML"
@@ -58,7 +58,7 @@ mod_gam2 <- gam(
 
 mod_gam2 <- gam(
   Dispersal_scaled ~ s(Locality, bs = "re") +
-    Altitude_scaled + Exposition2 + Site.protection + s(Month, bs = "re") + Trees,
+    Altitude_scaled + Exposition2 + Site.protection + s(Time.period, bs = "re") + Trees,
   data   = df,
   family = betar(link="cloglog"),
   method = "REML"
@@ -67,7 +67,7 @@ mod_gam2 <- gam(
 mod_gam2 <- gam(
   Rao ~ 
     s(Locality, bs = "re") + 
-    Altitude_scaled  + Exposition2 + Site.protection + s(Month, bs = "re") + Trees,
+    Altitude_scaled  + Exposition2 + Site.protection + s(Time.period, bs = "re") + Trees,
   data   = df,
   family = tw(link="log"), select = TRUE,
   method = "REML"

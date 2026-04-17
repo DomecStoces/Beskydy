@@ -28,14 +28,23 @@ rownames(comm_matrix) <- compo_names$ID
 # Combine metadata and species, then sum species counts per locality
 df_combined <- bind_cols(metadata_matched, as.data.frame(comm_matrix))
 
-df_agg <- df_combined %>%
-  drop_na(Locality, Trees, Altitude, Exposition, Time.period) %>%
-  group_by(Locality, Trees, Altitude, Exposition, Time.period) %>%
+df_clean <- df_combined %>%
+  mutate(
+    Month_num = as.numeric(substr(Date, 4, 5)),
+    Month = factor(Month_num, 
+                   levels = c(6, 7, 9, 10), 
+                   labels = c("June", "July", "September", "October"))
+  ) %>%
+  drop_na(Locality, Trees, Altitude, Exposition, Year, Month)
+
+df_agg <- df_clean %>%
+  group_by(Locality, Trees, Altitude, Exposition, Year, Month) %>%
   summarise(across(all_of(colnames(comm_matrix)), ~sum(., na.rm = TRUE)), .groups = "drop") %>%
   mutate(
-    Altitude_scaled = as.numeric(scale(Altitude)),
+    Locality = as.factor(Locality), 
+    Year = as.factor(Year),         
     Trees = as.factor(Trees),
-    Time.period = as.numeric(Time.period),
+    Altitude_scaled = as.numeric(scale(Altitude)),
     Exposition_midpoint = sapply(strsplit(as.character(Exposition), "_"), function(x) {
       mean(as.numeric(trimws(x)), na.rm = TRUE)
     }),
@@ -44,16 +53,13 @@ df_agg <- df_combined %>%
   filter(!is.na(Exposition2) & !is.nan(Exposition2))
 
 # 5. Prepare aggregated community matrix and convert to presence/absence
-comm_agg <- as.matrix(df_agg %>%  
-                        select(-Locality, -Trees, -Altitude, -Altitude_scaled, -Exposition, -Exposition2, -Time.period))
-rownames(comm_agg) <- paste(df_agg$Locality, df_agg$Time.period, sep = "_")
+comm_agg <- as.matrix(df_agg %>% select(all_of(colnames(comm_matrix))))
+rownames(comm_agg) <- paste(df_agg$Locality, df_agg$Year, df_agg$Month, sep = "_")
 comm_pa_agg <- ifelse(comm_agg > 0, 1, 0)
 valid_rows <- rowSums(comm_pa_agg) > 0
 comm_pa_agg <- comm_pa_agg[valid_rows, ]
-df_agg <- df_agg[valid_rows, ]
-df_agg <- as.data.frame(df_agg)
-rownames(df_agg) <- paste(df_agg$Locality, df_agg$Time.period, sep = "_")
-
+df_agg <- as.data.frame(df_agg[valid_rows, ])
+rownames(df_agg) <- paste(df_agg$Locality, df_agg$Year, df_agg$Month, sep = "_")
 
 # 6. Calculate independent beta-diversity components
 dist_jaccard <- designdist(comm_pa_agg, method = "1 - (J / (A + B - J))", terms = "binary")
@@ -75,41 +81,22 @@ print(permutest(disp_simpson, permutations = 999))
 
 # 8. PERMANOVA
 # Overall compositional dissimilarity (Total beta-diversity)
-perm_jaccard <- adonis2(dist_jaccard_sqrt ~ Trees + Altitude_scaled + Time.period + Exposition2, 
+perm_jaccard <- adonis2(dist_jaccard_sqrt ~ Trees + Altitude_scaled + Exposition2 + Year + Month, 
                         data = df_agg, 
                         permutations = 999,
                         by = "margin")
-
 # Species turnover (Simpson index)
-perm_simpson <- adonis2(dist_simpson_sqrt ~ Trees + Altitude_scaled + Time.period + Exposition2, 
+perm_simpson <- adonis2(dist_simpson_sqrt ~ Trees + Altitude_scaled + Exposition2 + Year + Month, 
                         data = df_agg, 
                         permutations = 999,
                         by = "margin")
-
 # Species richness uniformity
-perm_richness <- adonis2(dist_richness_sqrt ~ Trees + Altitude_scaled + Time.period + Exposition2, 
+perm_richness <- adonis2(dist_richness_sqrt ~ Trees + Altitude_scaled + Exposition2 + Year + Month, 
                          data = df_agg, 
                          permutations = 999,
                          by = "margin")
-
 print("--- PERMANOVA of Elevational gradient, Trees, and Time ---")
 print(perm_jaccard)
 print(perm_simpson)
 print(perm_richness)
-
-cor.test(df_agg$Altitude, rowSums(comm_pa_agg))
-
-# 1. Add species richness (number of species) directly into aggregated dataframe
-df_agg$Richness <- rowSums(comm_pa_agg)
-# 2. Create the linear regression plot
-plot_richness <- ggplot(df_agg, aes(x = Altitude_scaled, y = Richness)) +
-  geom_point(size = 1.5, alpha = 0.8) +
-  geom_smooth(method = "lm", color = "black", fill = "grey60", alpha = 0.3) +
-  theme_bw(base_size = 15) +
-  theme(panel.grid.minor = element_blank(),
-        legend.position = "right") +
-  labs(title = "Spider",
-       x = "Elevational gradient (scaled)",
-       y = "Species richness")
-print(plot_richness)
 

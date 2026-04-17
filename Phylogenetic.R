@@ -13,8 +13,9 @@ tree_data <- read_excel("Beskydy_2007_2008_traits_final.xlsx", sheet = "Phylo_ch
 tree_data[] <- lapply(tree_data, factor)
 commun_df <- as.data.frame(commun)
 
+# Order/Family/Family_name/Species
 # Create the tree using the EXACT column names from your Excel sheet
-tree.p <- as.phylo(~Order/Family/Family_name/Species, data=tree_data)
+tree.p <- as.phylo(~Subfamily/Family_name/species, data=tree_data)
 treeRoot <- multi2di(tree.p)
 tree.pp <- compute.brlen(treeRoot)
 
@@ -26,14 +27,14 @@ comm_matched <- combined$comm
 # Calculate ses.pd (Standardized Effect Size of Faith's PD)
 my_ses_pd <- ses.pd(comm_matched, tree_matched, null.model="independentswap", runs=500)
 # pd.obs.z
-write_xlsx(my_ses_pd, "Carabid_SESpd.xlsx")
+write_xlsx(my_ses_pd, "SESpd.xlsx")
 
 # Calculate Mean Pairwise Distance (MPD) and ses.mpd #
 phydist <- cophenetic(tree_matched)
 my_raw_mpd <- mpd(comm_matched, phydist, abundance.weighted=TRUE)
 my_ses_mpd <- ses.mpd(comm_matched, phydist, null.model="independentswap", abundance.weighted=TRUE, runs=500)
 # MPD = mpd.obs
-write_xlsx(my_ses_mpd, "Carabid_MPD.xlsx")
+write_xlsx(my_ses_mpd, "MPD.xlsx")
 
 # Analysis of Phylogeny Sespd and meanPD #
 PD <- read_excel("Beskydy_2007_2008_traits_final.xlsx", sheet = "chilo_diplo_iso_FD")

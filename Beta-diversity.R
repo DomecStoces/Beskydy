@@ -13,7 +13,7 @@ library(readxl)
 
 # 1.
 df <- read_excel("Beskydy_2007_2008_traits_final.xlsx", sheet = "spiders_FD")
-compo_names <- read_excel("Beskydy_2007_2008_traits_final.xlsx", sheet = "chilo_diplo_iso_compo_names")
+compo_names <- read_excel("Beskydy_2007_2008_traits_final.xlsx", sheet = "spiders_compo_names")
 
 # 2. Initial
 metadata <- df
@@ -29,36 +29,45 @@ rownames(comm_matrix) <- compo_names$ID
 df_combined <- bind_cols(metadata_matched, as.data.frame(comm_matrix))
 
 df_agg <- df_combined %>%
-  # Extract the 4th and 5th characters from the "DD.MM." string to get the Month
-  mutate(Month = as.factor(substr(Date, 4, 5))) %>% 
-  drop_na(Locality, Month, Year, Trees, Altitude) %>%
-  group_by(Locality, Month, Year, Trees, Altitude) %>%
-  summarise(across(all_of(colnames(comm_matrix)), sum), .groups = "drop") %>%
+  drop_na(Locality, Trees, Altitude, Exposition, Time.period) %>%
+  group_by(Locality, Trees, Altitude, Exposition, Time.period) %>%
+  summarise(across(all_of(colnames(comm_matrix)), ~sum(., na.rm = TRUE)), .groups = "drop") %>%
   mutate(
-    Altitude_scaled = scale(Altitude),
+    Altitude_scaled = as.numeric(scale(Altitude)),
     Trees = as.factor(Trees),
-    Locality = as.factor(Locality),
-    Year = as.factor(Year))
+    Time.period = as.numeric(Time.period),
+    Exposition_midpoint = sapply(strsplit(as.character(Exposition), "_"), function(x) {
+      mean(as.numeric(trimws(x)), na.rm = TRUE)
+    }),
+    Exposition2 = as.numeric(scale(Exposition_midpoint))
+  ) %>%
+  filter(!is.na(Exposition2) & !is.nan(Exposition2))
 
 # 5. Prepare aggregated community matrix and convert to presence/absence
-comm_agg <- as.matrix(df_agg %>% 
-                        select(-Locality, -Trees, -Altitude, -Altitude_scaled, -Month, -Year))
-rownames(comm_agg) <- paste(df_agg$Locality, df_agg$Month, df_agg$Year, sep = "_")
+comm_agg <- as.matrix(df_agg %>%  
+                        select(-Locality, -Trees, -Altitude, -Altitude_scaled, -Exposition, -Exposition2, -Time.period))
+rownames(comm_agg) <- paste(df_agg$Locality, df_agg$Time.period, sep = "_")
 comm_pa_agg <- ifelse(comm_agg > 0, 1, 0)
+valid_rows <- rowSums(comm_pa_agg) > 0
+comm_pa_agg <- comm_pa_agg[valid_rows, ]
+df_agg <- df_agg[valid_rows, ]
+df_agg <- as.data.frame(df_agg)
+rownames(df_agg) <- paste(df_agg$Locality, df_agg$Time.period, sep = "_")
+
 
 # 6. Calculate independent beta-diversity components
 dist_jaccard <- designdist(comm_pa_agg, method = "1 - (J / (A + B - J))", terms = "binary")
 dist_simpson <- designdist(comm_pa_agg, method = "1 - (J / pmin(A, B))", terms = "binary")
 dist_richness <- designdist(comm_pa_agg, method = "1 - (pmin(A, B) / pmax(A, B))", terms = "binary")
 
-# Square-root transform them for PERMDISP/PERMANOVA
-dist_jaccard_sqrt  <- sqrt(dist_jaccard)
-dist_simpson_sqrt  <- sqrt(dist_simpson)
+dist_jaccard_sqrt <- sqrt(dist_jaccard)
+dist_simpson_sqrt <- sqrt(dist_simpson)
 dist_richness_sqrt <- sqrt(dist_richness)
 
 # 7. PERMDISP: testing variance
-disp_jaccard <- betadisper(dist_jaccard_sqrt, df_agg$Trees)
-disp_simpson <- betadisper(dist_simpson_sqrt, df_agg$Trees)
+disp_jaccard <- betadisper(dist_jaccard, df_agg$Trees)
+disp_simpson <- betadisper(dist_simpson, df_agg$Trees)
+
 
 print("--- PERMDISP Results ---")
 print(permutest(disp_jaccard, permutations = 999))
@@ -66,24 +75,22 @@ print(permutest(disp_simpson, permutations = 999))
 
 # 8. PERMANOVA
 # Overall compositional dissimilarity (Total beta-diversity)
-perm_jaccard <- adonis2(dist_jaccard_sqrt ~ Trees + Altitude_scaled + Year + Month, 
+perm_jaccard <- adonis2(dist_jaccard_sqrt ~ Trees + Altitude_scaled + Time.period + Exposition2, 
                         data = df_agg, 
                         permutations = 999,
-                        by = "margin",
-                        strata = df_agg$Locality)
+                        by = "margin")
 
 # Species turnover (Simpson index)
-perm_simpson <- adonis2(dist_simpson_sqrt ~ Trees + Altitude_scaled + Year + Month, 
+perm_simpson <- adonis2(dist_simpson_sqrt ~ Trees + Altitude_scaled + Time.period + Exposition2, 
                         data = df_agg, 
                         permutations = 999,
-                        by = "margin",
-                        strata = df_agg$Locality)
+                        by = "margin")
+
 # Species richness uniformity
-perm_richness <- adonis2(dist_richness_sqrt ~ Trees + Altitude_scaled + Year + Month, 
+perm_richness <- adonis2(dist_richness_sqrt ~ Trees + Altitude_scaled + Time.period + Exposition2, 
                          data = df_agg, 
                          permutations = 999,
-                         by = "margin",
-                         strata = df_agg$Locality)
+                         by = "margin")
 
 print("--- PERMANOVA of Elevational gradient, Trees, and Time ---")
 print(perm_jaccard)

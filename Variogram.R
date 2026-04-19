@@ -106,28 +106,23 @@ coords_clean <- coords_utm %>%
 # Join with community weighted means data (ensure cwm_clean is loaded in your environment)
 df <- df %>% left_join(coords_clean, by = "Locality")
 
-# Build the final data frame for your models/variograms
-df <- df %>% mutate(Month_num = as.numeric(substr(Date, 4, 5)),
-                    Month = factor(Month_num, 
-                                   levels = c(6, 7, 9, 10), 
-                                   labels = c("June", "July", "September", "October")))
-
-df <- df %>%
-  transmute(
-    Year        = factor(Year),
-    Locality    = factor(Locality),
-    Month       = factor(Month),
-    Site.protection = factor(Site.protection), 
+# Build the final data frame for models/variograms
+df <- df %>% 
+  mutate(
+    Month_num = as.numeric(sapply(strsplit(as.character(Date), ".", fixed = TRUE), `[`, 2)),
+    Month = factor(Month_num, levels = c(6, 7, 9, 10), labels = c("June", "July", "September", "October")),
+    Year = factor(Year),
+    Locality = factor(Locality),
+    Site.protection = factor(Site.protection),
     Exposition2 = as.numeric(scale(as.numeric(Exposition2))),
+    Time.period = factor(Time.period),
+    Trees = factor(Trees),
     
-    Altitude_scaled,
-    
+    # X and Y are already in df, so this works perfectly now!
     X_km = (X - mean(X, na.rm = TRUE)) / 1000,
-    Y_km = (Y - mean(Y, na.rm = TRUE)) / 1000,
-    
-    Size, Trophic, Rao
+    Y_km = (Y - mean(Y, na.rm = TRUE)) / 1000
   ) %>%
-  tidyr::drop_na()
+  tidyr::drop_na(Size, Trophic, Rao, Locality, Altitude_scaled, Exposition2, Site.protection, Time.period, Trees, X_km, Y_km)
 
 # Calculate adaptive basis dimension (k)
 k_xy <- max(6, min(10, nrow(dplyr::distinct(df, X_km, Y_km)) - 1))
@@ -140,7 +135,7 @@ library(spdep)
 # ---------------------------------------------------------
 # STEP 1: Extract Residuals & Aggregate by Site
 # ---------------------------------------------------------
-# Extract Pearson residuals from the GAM and add them to df1
+# Extract Pearson residuals from the GAM and add them to df
 df$res_pearson <- residuals(mod_gam2, type = "pearson")
 
 # Calculate the mean residual for each of the 38 unique localities.
@@ -148,7 +143,6 @@ df$res_pearson <- residuals(mod_gam2, type = "pearson")
 site_data <- df %>%
   group_by(Locality, X_km, Y_km) %>%
   summarise(mean_res = mean(res_pearson), .groups = "drop")
-
 
 # ---------------------------------------------------------
 # STEP 2: The Variogram (Visualizing Spatial Autocorrelation)
@@ -189,3 +183,4 @@ moran_test <- moran.test(site_data$mean_res, listw_k1, zero.policy = TRUE)
 
 # Print the results
 print(moran_test)
+

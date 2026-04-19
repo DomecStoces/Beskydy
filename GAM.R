@@ -3,47 +3,47 @@ library(readxl)
 library(mgcv)
 library(stringr)
 library(dplyr)
-df <- read_excel("Beskydy_2007_2008_traits_final.xlsx", sheet = "spiders_FD")
-df$Altitude_scaled <- as.numeric(scale(df$Altitude, center = TRUE, scale = TRUE))
-df$Locality <- as.factor(df$Locality)
-df$Trees <- as.factor(df$Trees)
-df$Time.period <- as.factor(df$Time.period)
-df <- df %>%
+df1 <- read_excel("Beskydy_2007_2008_traits_final.xlsx", sheet = "spiders_FD")
+df1$Altitude_scaled <- as.numeric(scale(df1$Altitude, center = TRUE, scale = TRUE))
+df1$Locality <- as.factor(df1$Locality)
+df1$Trees <- as.factor(df1$Trees)
+df1$Time.period <- as.factor(df1$Time.period)
+df1 <- df1 %>%
   mutate(
     Exposition2 = sapply(strsplit(as.character(Exposition), "_"), function(x) mean(as.numeric(x))),
     Exposition2 = as.numeric(scale(Exposition2))
   )
-head(df %>% select(Exposition, Exposition2))
+head(df1 %>% select(Exposition, Exposition2))
 
 # Scaling traits for spiders #
-n <- nrow(df)
-df$Trophic_01 <- df$Trophic - 1
-df$Trophic_scaled <- (df$Trophic_01 * (n - 1) + 0.5) / n
-df$Dispersal_scaled <- (df$Dispersal * (n - 1) + 0.5) / n
+n <- nrow(df1)
+df1$Trophic_01 <- df1$Trophic - 1
+df1$Trophic_scaled <- (df1$Trophic_01 * (n - 1) + 0.5) / n
+df1$Dispersal_scaled <- (df1$Dispersal * (n - 1) + 0.5) / n
 
 # Scaling traits for carabids #
-min_val <- min(df$Trophic, na.rm = TRUE)
-max_val <- max(df$Trophic, na.rm = TRUE)
+min_val <- min(df1$Trophic, na.rm = TRUE)
+max_val <- max(df1$Trophic, na.rm = TRUE)
 
-df$Trophic_norm <- (df$Trophic - min_val) / (max_val - min_val)
-n <- nrow(df)
-df$Trophic_scaled <- (df$Trophic_norm * (n - 1) + 0.5) / n
-df$Dispersal_scaled <- (df$Dispersal * (n - 1) + 0.5) / n
+df1$Trophic_norm <- (df1$Trophic - min_val) / (max_val - min_val)
+n <- nrow(df1)
+df1$Trophic_scaled <- (df1$Trophic_norm * (n - 1) + 0.5) / n
+df1$Dispersal_scaled <- (df1$Dispersal * (n - 1) + 0.5) / n
 
 # Scaling traits for weevils #
-n <- nrow(df)
-df$Dispersal_01 <- df$Dispersal - 1
-df$Dispersal_scaled <- (df$Dispersal_01 * (n - 1) + 0.5) / n
+n <- nrow(df1)
+df1$Dispersal_01 <- df1$Dispersal - 1
+df1$Dispersal_scaled <- (df1$Dispersal_01 * (n - 1) + 0.5) / n
 
 # Scaling traits for chilo-diplo-iso #
-n <- nrow(df)
-df$Trophic_01 <- df$Trophic - 1
-df$Trophic_scaled <- (df$Trophic_01 * (n - 1) + 0.5) / n
+n <- nrow(df1)
+df1$Trophic_01 <- df1$Trophic - 1
+df1$Trophic_scaled <- (df1$Trophic_01 * (n - 1) + 0.5) / n
 
 mod_gam2 <- gam(
   Size ~ s(Locality, bs = "re") +
     Altitude_scaled + Exposition2 + Site.protection + s(Time.period, bs = "re") + Trees,
-  data   = df,
+  data   = df1,
   family = gaussian(link="log"),
   method = "REML"
 )
@@ -51,7 +51,7 @@ mod_gam2 <- gam(
 mod_gam2 <- gam(
   Trophic_scaled ~ s(Locality, bs = "re") +
     Altitude_scaled + Exposition2 + Site.protection + s(Time.period, bs = "re") + Trees,
-  data   = df,
+  data   = df1,
   family = betar(link="logit"),
   method = "REML"
 )
@@ -59,7 +59,7 @@ mod_gam2 <- gam(
 mod_gam2 <- gam(
   Dispersal_scaled ~ s(Locality, bs = "re") +
     Altitude_scaled + Exposition2 + Site.protection + s(Time.period, bs = "re") + Trees,
-  data   = df,
+  data   = df1,
   family = betar(link="cloglog"),
   method = "REML"
 )
@@ -68,7 +68,7 @@ mod_gam2 <- gam(
   Rao ~ 
     s(Locality, bs = "re") + 
     Altitude_scaled  + Exposition2 + Site.protection + s(Time.period, bs = "re") + Trees,
-  data   = df,
+  data   = df1,
   family = tw(link="log"), select = TRUE,
   method = "REML"
 )
@@ -90,15 +90,15 @@ excl <- c("s(Locality)")
 tv <- typical_values(mod_gam2)
 
 # 1. Create the smooth sequence of 100 points
-alt_seq <- seq(min(df$Altitude_scaled, na.rm = TRUE),
-               max(df$Altitude_scaled, na.rm = TRUE), length.out = 100)
+alt_seq <- seq(min(df1$Altitude_scaled, na.rm = TRUE),
+               max(df1$Altitude_scaled, na.rm = TRUE), length.out = 100)
 
 tv2 <- dplyr::select(tv, -any_of(c("Altitude_scaled","Altitude_scaled2")))
 
 # 2. Build the prediction grid
 new_data <- tidyr::crossing(tv2, tibble(Altitude_scaled = alt_seq))
 
-# 3. Calculate fitted values USING new_data (not df!)
+# 3. Calculate fitted values USING new_data (not df1!)
 fv <- fitted_values(mod_gam2, data = new_data, exclude = excl,
                     scale = "link", se = TRUE) %>%
   dplyr::rename(fitted_link = any_of(c("fitted",".fitted","fit")),
@@ -121,7 +121,7 @@ p <- ggplot() +
   # The fitted line (now smooth!)
   geom_line(data = fv,
             aes(x = Altitude_scaled, y = fitted), linewidth = 1.1) +
-  geom_jitter(data = df,
+  geom_jitter(data = df1,
               aes(x = Altitude_scaled, y = Size),
               width = 0.03, height = 0, size = 1.8, alpha = 0.6) +
   labs(title = "Weevils", x = "Elevational gradient (scaled)", y = "Dispersal ability CWM") +
@@ -150,8 +150,8 @@ p
 # vizualization for Size #
 excl <- c("s(Locality)")
 tv <- typical_values(mod_gam2)
-alt_seq <- seq(min(df$Altitude_scaled, na.rm = TRUE),
-               max(df$Altitude_scaled, na.rm = TRUE), length.out = 100)
+alt_seq <- seq(min(df1$Altitude_scaled, na.rm = TRUE),
+               max(df1$Altitude_scaled, na.rm = TRUE), length.out = 100)
 
 tv2 <- dplyr::select(tv, -any_of(c("Altitude_scaled","Altitude_scaled2")))
 new_data <- tidyr::crossing(tv2, tibble(Altitude_scaled = alt_seq))
@@ -177,7 +177,7 @@ p <- ggplot() +
             aes(x = Altitude_scaled, y = fitted), linewidth = 1.1) +
   
   # The points (using actual Size)
-  geom_jitter(data = df,
+  geom_jitter(data = df1,
               aes(x = Altitude_scaled, y = Size),
               width = 0.03, height = 0, size = 1.8, alpha = 0.6) +
   
@@ -205,13 +205,13 @@ p
 
 # vizualization for Rao #
 new_data <- data.frame(
-  Altitude_scaled = seq(min(df$Altitude_scaled, na.rm = TRUE), 
-                        max(df$Altitude_scaled, na.rm = TRUE), 
+  Altitude_scaled = seq(min(df1$Altitude_scaled, na.rm = TRUE), 
+                        max(df1$Altitude_scaled, na.rm = TRUE), 
                         length.out = 100),
-  Exposition2     = mean(df$Exposition2, na.rm = TRUE),
-  Site.protection = df$Site.protection[1], 
-  Year            = df$Year[1],            
-  Locality        = df$Locality[1]                 
+  Exposition2     = mean(df1$Exposition2, na.rm = TRUE),
+  Site.protection = df1$Site.protection[1], 
+  Year            = df1$Year[1],            
+  Locality        = df1$Locality[1]                 
 )
 
 # 2. Predict on the "link" (log) scale, EXCLUDING the Locality random effect
@@ -238,7 +238,7 @@ p <- ggplot() +
             aes(x = Altitude_scaled, y = fitted), linewidth = 1.1) +
   
   # The raw data points
-  geom_jitter(data = df,
+  geom_jitter(data = df1,
               aes(x = Altitude_scaled, y = Rao),
               width = 0.03, height = 0, size = 1.8, alpha = 0.6) +
   

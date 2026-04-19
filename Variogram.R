@@ -107,6 +107,11 @@ coords_clean <- coords_utm %>%
 df <- df %>% left_join(coords_clean, by = "Locality")
 
 # Build the final data frame for your models/variograms
+df <- df %>% mutate(Month_num = as.numeric(substr(Date, 4, 5)),
+                    Month = factor(Month_num, 
+                                   levels = c(6, 7, 9, 10), 
+                                   labels = c("June", "July", "September", "October")))
+
 df <- df %>%
   transmute(
     Year        = factor(Year),
@@ -127,31 +132,60 @@ df <- df %>%
 # Calculate adaptive basis dimension (k)
 k_xy <- max(6, min(10, nrow(dplyr::distinct(df, X_km, Y_km)) - 1))
 
-write_xlsx(df, "df1.xlsx")
-# Correlogram (autocorrelation using Moran’s I based on site-averaged Pearson residuals)
+### Correlogram (autocorrelation using Moran’s I based on site-averaged Pearson residuals) ###
 library(gstat)
 library(sp)
 library(spdep)
 
-# Find the distance to the nearest neighbor for every point
-k1 <- knn2nb(knearneigh(coords, k = 1))
-dists <- unlist(nbdists(k1, coords))
-max_1nn_dist <- max(dists)
-print(max_1nn_dist)
+# ---------------------------------------------------------
+# STEP 1: Extract Residuals & Aggregate by Site
+# ---------------------------------------------------------
+# Extract Pearson residuals from the GAM and add them to df1
+df$res_pearson <- residuals(mod_gam2, type = "pearson")
 
+# Calculate the mean residual for each of the 38 unique localities.
+# This solves the "identical points" issue by creating a purely spatial dataframe.
+site_data <- df %>%
+  group_by(Locality, X_km, Y_km) %>%
+  summarise(mean_res = mean(res_pearson), .groups = "drop")
+
+
+# ---------------------------------------------------------
+# STEP 2: The Variogram (Visualizing Spatial Autocorrelation)
+# ---------------------------------------------------------
 # Calculate the robust Cressie variogram up to 10 km
+# Note: We use 'site_data' here, so 'mean_res' is found and overlapping points are gone!
 vgm_cressie <- variogram(
   mean_res ~ 1, 
   locations = ~ X_km + Y_km, 
-  data = df_site_res,
+  data = site_data,
   cutoff = 10,       
   width = 1,         
   cressie = TRUE     
 )
 
-# Plot it
+# Plot the variogram
 plot(vgm_cressie, 
-     main = "Semi-variogram of residuals (Cressie)", 
+     main = "Semi-variogram of mean GAM residuals (Cressie)", 
      xlab = "Distance (km)", 
      ylab = "Semi-variance",
      pch = 19, cex = 1.2)
+
+
+# ---------------------------------------------------------
+# STEP 3: Moran's I Test (Statistical Test of Autocorrelation)
+# ---------------------------------------------------------
+# 1. Create coordinates matrix from the unique sites
+coords_unique <- cbind(site_data$X_km, site_data$Y_km)
+
+# 2. Find the nearest neighbor (k=1) for each site
+k1 <- knn2nb(knearneigh(coords_unique, k = 1))
+
+# 3. Convert the neighbor network into a spatial weights object
+listw_k1 <- nb2listw(k1, style = "W", zero.policy = TRUE)
+
+# 4. Run the Moran's I test on the mean residuals
+moran_test <- moran.test(site_data$mean_res, listw_k1, zero.policy = TRUE)
+
+# Print the results
+print(moran_test)

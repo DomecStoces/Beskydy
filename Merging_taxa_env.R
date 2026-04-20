@@ -65,8 +65,8 @@ processed_list <- imap(taxa_sheets, process_taxon)
 map(processed_list, nrow)
 
 # 8. Master environment
-env_master <- processed_list[[1]] %>%
-  select(SampleID, all_of(env_vars))
+env_master <- map_dfr(processed_list, ~ select(.x, SampleID, all_of(env_vars))) %>%
+  distinct(SampleID, .keep_all = TRUE)
 
 # 9. Extract taxa-only data
 taxa_only <- map(processed_list, ~ select(.x, -all_of(env_vars)))

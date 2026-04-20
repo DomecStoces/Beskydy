@@ -67,3 +67,31 @@ fviz_pca_var(
   col.var = "black"
 )
 dev.off()
+
+# Correlation between precipitation and temperature #
+library(corrplot)
+library(dplyr)
+df1 <- read_excel("CANOCO_FINAL.xlsx", sheet = "env")
+# Select only the numeric environmental variables
+numeric_vars <- c("Temperature", "Precipitation")
+
+# Compute Spearman correlation matrix
+cor_matrix <- df1 %>% select(all_of(numeric_vars)) %>% cor(method = "spearman", use = "pairwise.complete.obs")
+
+# Plot correlation heatmap
+corrplot(cor_matrix, method = "color", type = "upper",
+         order = "hclust", tl.col = "black", tl.srt = 45,
+         addCoef.col = "black", number.cex = 0.8)
+
+# Save to TIFF
+tiff("Spearman_rank_corr.tiff", units = "in", width = 7, height = 5, res = 300)
+corrplot(cor_matrix, method = "color", type = "upper",
+         order = "hclust", tl.col = "black", tl.srt = 45,
+         addCoef.col = "black", number.cex = 0.8)
+dev.off()
+
+# Quantitative check of multicollinearity using VIF
+# A VIF value above 5 or 10 indicates problematic multicollinearity
+library(car)
+model_vif <- lm(Altitude ~ Precipitation + Temperature, data = df1)
+vif(model_vif)

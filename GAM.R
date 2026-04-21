@@ -3,7 +3,7 @@ library(readxl)
 library(mgcv)
 library(stringr)
 library(dplyr)
-df <- read_excel("Beskydy_2007_2008_traits_final.xlsx", sheet = "spiders_FD")
+df <- read_excel("Beskydy_2007_2008_traits_final.xlsx", sheet = "chilo_diplo_iso_FD")
 df$Altitude_scaled <- as.numeric(scale(df$Altitude, center = TRUE, scale = TRUE))
 df$Locality <- as.factor(df$Locality)
 df$Trees <- as.factor(df$Trees)
@@ -41,7 +41,7 @@ df$Trophic_01 <- df$Trophic - 1
 df$Trophic_scaled <- (df$Trophic_01 * (n - 1) + 0.5) / n
 
 mod_gam2 <- gam(
-  Size ~ s(Locality, bs = "re") +
+  Size ~ s(Locality, bs = "re")+
     Altitude_scaled + Exposition2 + Site.protection + s(Time.period, bs = "re") + Trees,
   data   = df,
   family = gaussian(link="log"),
@@ -166,6 +166,7 @@ fv <- fitted_values(mod_gam2, data = new_data, exclude = excl,
     lower  = exp(lower_link),   
     upper  = exp(upper_link)    
   )
+exact_breaks <- unique(df$Altitude_scaled)
 p <- ggplot() +
   # The confidence ribbon
   geom_ribbon(data = fv,
@@ -182,10 +183,12 @@ p <- ggplot() +
               width = 0.03, height = 0, size = 1.8, alpha = 0.6) +
   
   # Labels
-  labs(title = "Weevils", x = "Elevational gradient (scaled)", y = "Size CWM") +
-  scale_x_continuous(breaks = seq(-2, 2, 1), minor_breaks = NULL) +
+  labs(x = "Elevational gradient (scaled)", y = "Size CWM") +
   
-  # Y-Axis: CHANGED to let ggplot auto-scale to your 3-8.5 size range
+  # Closed the parenthesis right after the rounding function
+  scale_x_continuous(breaks = exact_breaks, labels = function(x) round(x, 1)) + 
+  
+  # CHANGED to let ggplot auto-scale to your 3-8.5 size range
   scale_y_continuous(expand = expansion(mult = c(0.05, 0.05))) +
   
   theme(
@@ -198,8 +201,9 @@ p <- ggplot() +
     axis.ticks.length= unit(4, "pt"),
     axis.title       = element_text(size = 15),
     axis.text        = element_text(colour = "black", size = 11),
-    plot.margin      = margin(6, 8, 6, 6)
-  )
+    # FIXED: Moved the angle and hjust here to your main theme block
+    axis.text.x      = element_text(angle = 45, hjust = 1), 
+    plot.margin      = margin(6, 8, 6, 6))
 
 p
 

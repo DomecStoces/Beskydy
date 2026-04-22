@@ -12,8 +12,8 @@ library(ggplot2)
 library(readxl)
 
 # 1.
-df <- read_excel("Beskydy_2007_2008_traits_final.xlsx", sheet = "spiders_FD")
-compo_names <- read_excel("Beskydy_2007_2008_traits_final.xlsx", sheet = "spiders_compo_names")
+df <- read_excel("Beskydy_2007_2008_traits_final.xlsx", sheet = "chilo_diplo_iso_FD")
+compo_names <- read_excel("Beskydy_2007_2008_traits_final.xlsx", sheet = "chilo_diplo_iso_compo_names")
 
 # 2. Initial
 metadata <- df
@@ -30,7 +30,7 @@ df_combined <- bind_cols(metadata_matched, as.data.frame(comm_matrix))
 
 df_clean <- df_combined %>%
   mutate(
-    Month_num = as.numeric(substr(Date, 4, 5)),
+    Month_num = as.numeric(sub(".*\\.(\\d+)\\.", "\\1", Date)),
     Month = factor(Month_num, 
                    levels = c(6, 7, 9, 10), 
                    labels = c("June", "July", "September", "October"))
@@ -99,4 +99,3 @@ print("--- PERMANOVA of Elevational gradient, Trees, and Time ---")
 print(perm_jaccard)
 print(perm_simpson)
 print(perm_richness)
-

@@ -19,7 +19,7 @@ taxa_sheets <- list(
 fd_vars <- c("Size", "Trophic", "Dispersal", "Rao", 
              "Count", "Richness", "SESpd", "MPD")
 
-env_vars <- c("Locality", "Year", "Time.period", 
+env_vars <- c("Locality", "Year", "Date", "Time.period", 
               "Temperature", "Precipitation", 
               "Site.protection", "Altitude", "Trees")
 

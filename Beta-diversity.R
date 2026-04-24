@@ -12,8 +12,8 @@ library(ggplot2)
 library(readxl)
 
 # 1.
-df <- read_excel("Beskydy_2007_2008_traits_final.xlsx", sheet = "chilo_diplo_iso_FD")
-compo_names <- read_excel("Beskydy_2007_2008_traits_final.xlsx", sheet = "chilo_diplo_iso_compo_names")
+df <- read_excel("CANOCO_FINAL.xlsx", sheet = "env")
+compo_names <- read_excel("CANOCO_FINAL.xlsx", sheet = "sp")
 
 # 2. Initial
 metadata <- df
@@ -54,12 +54,16 @@ df_agg <- df_clean %>%
 
 # 5. Prepare aggregated community matrix and convert to presence/absence
 comm_agg <- as.matrix(df_agg %>% select(all_of(colnames(comm_matrix))))
-rownames(comm_agg) <- paste(df_agg$Locality, df_agg$Year, df_agg$Month, sep = "_")
+safe_rownames <- make.unique(paste(df_agg$Locality, df_agg$Trees, df_agg$Year, df_agg$Month, sep = "_"))
+rownames(comm_agg) <- safe_rownames
+# Convert to presence/absence
 comm_pa_agg <- ifelse(comm_agg > 0, 1, 0)
+# Filter out empty rows
 valid_rows <- rowSums(comm_pa_agg) > 0
-comm_pa_agg <- comm_pa_agg[valid_rows, ]
+comm_pa_agg <- comm_pa_agg[valid_rows, , drop = FALSE]
+# Subset df_agg and apply the exact same filtered row names
 df_agg <- as.data.frame(df_agg[valid_rows, ])
-rownames(df_agg) <- paste(df_agg$Locality, df_agg$Year, df_agg$Month, sep = "_")
+rownames(df_agg) <- safe_rownames[valid_rows]
 
 # 6. Calculate independent beta-diversity components
 dist_jaccard <- designdist(comm_pa_agg, method = "1 - (J / (A + B - J))", terms = "binary")

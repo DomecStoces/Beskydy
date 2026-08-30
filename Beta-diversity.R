@@ -3,8 +3,9 @@ library(dplyr)
 library(tidyr)
 library(ggplot2)
 library(readxl)
+library(permute)
 
-# 1.
+# 1. Load data
 df <- read_excel("CANOCO_FINAL.xlsx", sheet = "env")
 compo_names <- read_excel("CANOCO_FINAL.xlsx", sheet = "sp")
 
@@ -30,12 +31,22 @@ df_clean <- df_combined %>%
   ) %>%
   drop_na(Locality, Trees, Altitude, Exposition, Year, Month)
 
-df_agg <- df_clean %>%
-  group_by(Locality, Trees, Altitude, Exposition, Year, Month) %>%
-  summarise(across(all_of(colnames(comm_matrix)), ~sum(., na.rm = TRUE)), .groups = "drop") %>%
+# ======================================================================
+# PART A: SPATIAL MODEL (Site-Level Aggregation, N = 38)
+# ======================================================================
+
+# Aggregate data across all times to site level
+df_spatial <- df_clean %>%
+  group_by(Locality) %>%
+  summarise(
+    Trees = first(Trees),
+    Altitude = first(Altitude),
+    Exposition = first(Exposition),
+    across(all_of(colnames(comm_matrix)), ~sum(., na.rm = TRUE)), 
+    .groups = "drop"
+  ) %>%
   mutate(
-    Locality = as.factor(Locality), 
-    Year = as.factor(Year),         
+    Locality = as.factor(Locality),
     Trees = as.factor(Trees),
     Altitude_scaled = as.numeric(scale(Altitude)),
     Exposition_midpoint = sapply(strsplit(as.character(Exposition), "_"), function(x) {
@@ -45,54 +56,98 @@ df_agg <- df_clean %>%
   ) %>%
   filter(!is.na(Exposition2) & !is.nan(Exposition2))
 
-# 5. Prepare aggregated community matrix and convert to presence/absence
-comm_agg <- as.matrix(df_agg %>% select(all_of(colnames(comm_matrix))))
-safe_rownames <- make.unique(paste(df_agg$Locality, df_agg$Trees, df_agg$Year, df_agg$Month, sep = "_"))
-rownames(comm_agg) <- safe_rownames
-# Convert to presence/absence
-comm_pa_agg <- ifelse(comm_agg > 0, 1, 0)
-# Filter out empty rows
-valid_rows <- rowSums(comm_pa_agg) > 0
-comm_pa_agg <- comm_pa_agg[valid_rows, , drop = FALSE]
-# Subset df_agg and apply the exact same filtered row names
-df_agg <- as.data.frame(df_agg[valid_rows, ])
-rownames(df_agg) <- safe_rownames[valid_rows]
+# Prepare spatial community matrix
+comm_spatial <- as.matrix(df_spatial %>% select(all_of(colnames(comm_matrix))))
+rownames(comm_spatial) <- df_spatial$Locality
 
-# 6. Calculate independent beta-diversity components
-dist_jaccard <- designdist(comm_pa_agg, method = "1 - (J / (A + B - J))", terms = "binary")
-dist_simpson <- designdist(comm_pa_agg, method = "1 - (J / pmin(A, B))", terms = "binary")
-dist_richness <- designdist(comm_pa_agg, method = "1 - (pmin(A, B) / pmax(A, B))", terms = "binary")
+# Convert to presence/absence and filter empty rows
+comm_pa_spatial <- ifelse(comm_spatial > 0, 1, 0)
+valid_rows_sp <- rowSums(comm_pa_spatial) > 0
+comm_pa_spatial <- comm_pa_spatial[valid_rows_sp, , drop = FALSE]
 
-dist_jaccard_sqrt <- sqrt(dist_jaccard)
-dist_simpson_sqrt <- sqrt(dist_simpson)
-dist_richness_sqrt <- sqrt(dist_richness)
+# Convert to dataframe and safely apply rownames
+df_spatial <- as.data.frame(df_spatial[valid_rows_sp, ])
+rownames(df_spatial) <- as.character(df_spatial$Locality)
 
-# 7. PERMDISP: testing variance
-disp_jaccard <- betadisper(dist_jaccard, df_agg$Trees)
-disp_simpson <- betadisper(dist_simpson, df_agg$Trees)
+# Calculate Spatial Distance Matrices
+dist_jaccard_sp <- sqrt(designdist(comm_pa_spatial, method = "1 - (J / (A + B - J))", terms = "binary"))
+dist_simpson_sp <- sqrt(designdist(comm_pa_spatial, method = "1 - (J / pmin(A, B))", terms = "binary"))
+dist_richness_sp <- sqrt(designdist(comm_pa_spatial, method = "1 - (pmin(A, B) / pmax(A, B))", terms = "binary"))
+
+# PERMANOVA 1: Spatial Predictors (Unrestricted permutations, N = 38)
+perm_spatial_jaccard <- adonis2(dist_jaccard_sp ~ Trees + Altitude_scaled + Exposition2, 
+                                data = df_spatial, permutations = 999, by = "margin")
+perm_spatial_simpson <- adonis2(dist_simpson_sp ~ Trees + Altitude_scaled + Exposition2, 
+                                data = df_spatial, permutations = 999, by = "margin")
+perm_spatial_richness <- adonis2(dist_richness_sp ~ Trees + Altitude_scaled + Exposition2, 
+                                 data = df_spatial, permutations = 999, by = "margin")
 
 
-print("--- PERMDISP Results ---")
-print(permutest(disp_jaccard, permutations = 999))
-print(permutest(disp_simpson, permutations = 999))
+# ======================================================================
+# PART B: TEMPORAL MODEL (Repeated Measures, N = 471)
+# ======================================================================
 
-# 8. PERMANOVA
-# Overall compositional dissimilarity (Total beta-diversity)
-perm_jaccard <- adonis2(dist_jaccard_sqrt ~ Trees + Altitude_scaled + Exposition2 + Year + Month, 
-                        data = df_agg, 
-                        permutations = 999,
-                        by = "margin")
-# Species turnover (Simpson index)
-perm_simpson <- adonis2(dist_simpson_sqrt ~ Trees + Altitude_scaled + Exposition2 + Year + Month, 
-                        data = df_agg, 
-                        permutations = 999,
-                        by = "margin")
-# Species richness uniformity
-perm_richness <- adonis2(dist_richness_sqrt ~ Trees + Altitude_scaled + Exposition2 + Year + Month, 
-                         data = df_agg, 
-                         permutations = 999,
-                         by = "margin")
-print("--- PERMANOVA of Elevational gradient, Trees, and Time ---")
-print(perm_jaccard)
-print(perm_simpson)
-print(perm_richness)
+# Aggregate data to the sampling event level (Year + Month)
+df_temporal <- df_clean %>%
+  group_by(Locality, Trees, Altitude, Exposition, Year, Month) %>%
+  summarise(across(all_of(colnames(comm_matrix)), ~sum(., na.rm = TRUE)), .groups = "drop") %>%
+  mutate(
+    Locality = as.factor(Locality), 
+    Year = as.factor(Year),         
+    Trees = as.factor(Trees)
+  )
+
+# Prepare temporal community matrix
+comm_temporal <- as.matrix(df_temporal %>% select(all_of(colnames(comm_matrix))))
+safe_rownames_temp <- make.unique(paste(df_temporal$Locality, df_temporal$Trees, df_temporal$Year, df_temporal$Month, sep = "_"))
+rownames(comm_temporal) <- safe_rownames_temp
+
+# Convert to presence/absence and filter empty rows
+comm_pa_temp <- ifelse(comm_temporal > 0, 1, 0)
+valid_rows_temp <- rowSums(comm_pa_temp) > 0
+comm_pa_temp <- comm_pa_temp[valid_rows_temp, , drop = FALSE]
+df_temporal <- as.data.frame(df_temporal[valid_rows_temp, ])
+rownames(df_temporal) <- safe_rownames_temp[valid_rows_temp]
+
+# Calculate Temporal Distance Matrices
+dist_jaccard_temp <- sqrt(designdist(comm_pa_temp, method = "1 - (J / (A + B - J))", terms = "binary"))
+dist_simpson_temp <- sqrt(designdist(comm_pa_temp, method = "1 - (J / pmin(A, B))", terms = "binary"))
+dist_richness_temp <- sqrt(designdist(comm_pa_temp, method = "1 - (pmin(A, B) / pmax(A, B))", terms = "binary"))
+
+# Define Restricted Permutations (Blocking by Locality to account for repeated measures)
+ctrl <- how(blocks = df_temporal$Locality, nperm = 999)
+
+# PERMANOVA 2: Temporal Predictors (Restricted permutations)
+perm_temporal_jaccard <- adonis2(dist_jaccard_temp ~ Year + Month, 
+                                 data = df_temporal, permutations = ctrl, by = "margin")
+perm_temporal_simpson <- adonis2(dist_simpson_temp ~ Year + Month, 
+                                 data = df_temporal, permutations = ctrl, by = "margin")
+perm_temporal_richness <- adonis2(dist_richness_temp ~ Year + Month, 
+                                  data = df_temporal, permutations = ctrl, by = "margin")
+
+# ======================================================================
+# PRINT RESULTS FOR TABLE 1
+# ======================================================================
+print("##################################################")
+print("TABLE 1 - JACCARD (Overall compositional dissimilarity)")
+print("--- Spatial Model (Df = 37) ---")
+print(perm_spatial_jaccard)
+print("--- Temporal Model (Blocked by Site) ---")
+print(perm_temporal_jaccard)
+print("##################################################")
+
+print("##################################################")
+print("TABLE 1 - SIMPSON (Species turnover)")
+print("--- Spatial Model (Df = 37) ---")
+print(perm_spatial_simpson)
+print("--- Temporal Model (Blocked by Site) ---")
+print(perm_temporal_simpson)
+print("##################################################")
+
+print("##################################################")
+print("TABLE 1 - RICHNESS UNIFORMITY (Species richness uniformity)")
+print("--- Spatial Model (Df = 37) ---")
+print(perm_spatial_richness)
+print("--- Temporal Model (Blocked by Site) ---")
+print(perm_temporal_richness)
+print("##################################################")

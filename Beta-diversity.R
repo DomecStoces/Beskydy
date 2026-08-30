@@ -82,6 +82,12 @@ perm_spatial_simpson <- adonis2(dist_simpson_sp ~ Trees + Altitude_scaled + Expo
 perm_spatial_richness <- adonis2(dist_richness_sp ~ Trees + Altitude_scaled + Exposition2, 
                                  data = df_spatial, permutations = 999, by = "margin")
 
+# 7. PERMDISP: testing variance on spatial (N=38) data
+disp_jaccard_sp <- betadisper(dist_jaccard_sp, df_spatial$Trees)
+disp_simpson_sp <- betadisper(dist_simpson_sp, df_spatial$Trees)
+print("--- PERMDISP Results (Spatial N=38) ---")
+print(permutest(disp_jaccard_sp, permutations = 999))
+print(permutest(disp_simpson_sp, permutations = 999))
 
 # ======================================================================
 # PART B: TEMPORAL MODEL (Repeated Measures, N = 471)
